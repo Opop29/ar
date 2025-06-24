@@ -2,13 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>AR Magic Game</title>
-
-    <!-- A-Frame and AR.js -->
+    <title>AR Magic Game (Fox Version)</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.min.js"></script>
-
-    <!-- Joystick -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.8.6/nipplejs.min.js"></script>
 
     <style>
@@ -69,18 +65,15 @@
   </head>
 
   <body>
-    <!-- UI -->
     <div id="joystick-zone"></div>
     <button id="attack-btn">Attack</button>
 
-    <!-- Camera permission overlay -->
     <div id="permission-overlay">
       <h2>📷 Camera Access Needed</h2>
       <p>Please allow camera access to play the AR game.<br />Reload if needed.</p>
       <button id="retry-btn">Try Again</button>
     </div>
 
-    <!-- AR scene -->
     <a-scene
       embedded
       vr-mode-ui="enabled: false"
@@ -91,27 +84,25 @@
       style="visibility: hidden"
     >
       <a-assets>
-  <a-asset-item
-    id="model"
-    src="https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models/2.0/Fox/glTF/Fox.gltf"
-  ></a-asset-item>
-</a-assets>
+        <a-asset-item
+          id="model"
+          src="https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models/2.0/Fox/glTF/Fox.gltf"
+        ></a-asset-item>
+      </a-assets>
 
-<a-marker preset="hiro">
-  <a-entity
-    id="player"
-    gltf-model="#model"
-    scale="0.01 0.01 0.01"
-    position="0 0 0.5"
-    rotation="0 180 0"
-  ></a-entity>
-</a-marker>
-
+      <a-marker preset="hiro">
+        <a-entity
+          id="player"
+          gltf-model="#model"
+          scale="0.02 0.02 0.02"
+          position="0 0 0.5"
+          rotation="0 180 0"
+        ></a-entity>
+      </a-marker>
 
       <a-entity camera></a-entity>
     </a-scene>
 
-    <!-- Script -->
     <script>
       const overlay = document.getElementById("permission-overlay");
       const retryBtn = document.getElementById("retry-btn");
@@ -142,7 +133,6 @@
       function setupGame() {
         const player = document.getElementById("player");
 
-        // Attack button logic
         attackBtn.addEventListener("click", () => {
           player.setAttribute("animation", {
             property: "rotation",
@@ -152,7 +142,6 @@
           });
         });
 
-        // Virtual joystick logic
         const joystick = nipplejs.create({
           zone: joystickZone,
           mode: "static",
@@ -171,7 +160,6 @@
         });
       }
 
-      // Start
       requestCamera();
     </script>
   </body>
