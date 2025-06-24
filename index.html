@@ -2,13 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>AR Magic Game</title>
+    <title>🚗 AR Car Game</title>
 
-    <!-- A-Frame and AR.js -->
+    <!-- A-Frame + AR.js + Joystick -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.min.js"></script>
-
-    <!-- Joystick -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.8.6/nipplejs.min.js"></script>
 
     <style>
@@ -19,158 +17,140 @@
 
       #joystick-zone {
         position: absolute;
-        bottom: 50px;
-        left: 50px;
+        bottom: 40px;
+        left: 40px;
         width: 150px;
         height: 150px;
         z-index: 999;
-        display: none;
+        border-radius: 50%;
       }
 
-      #attack-btn {
+      #game-status {
         position: absolute;
-        bottom: 60px;
-        right: 50px;
-        padding: 12px 20px;
-        font-size: 18px;
-        z-index: 999;
-        background-color: red;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        display: none;
-      }
-
-      #permission-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        flex-direction: column;
-        text-align: center;
-        z-index: 1000;
-        padding: 2rem;
-      }
-
-      #permission-overlay button {
-        margin-top: 20px;
+        top: 20px;
+        left: 20px;
         padding: 10px 20px;
         font-size: 16px;
-        background: green;
+        background: rgba(0, 0, 0, 0.7);
         color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
+        border-radius: 10px;
+        z-index: 1000;
+        font-family: sans-serif;
       }
     </style>
   </head>
 
   <body>
-    <!-- UI -->
+    <!-- Joystick UI -->
     <div id="joystick-zone"></div>
-    <button id="attack-btn">Attack</button>
+    <div id="game-status">🕹️ Move the car to avoid obstacles!</div>
 
-    <!-- Camera permission overlay -->
-    <div id="permission-overlay">
-      <h2>📷 Camera Access Needed</h2>
-      <p>Please allow camera access to play the AR game.<br />Reload if needed.</p>
-      <button id="retry-btn">Try Again</button>
-    </div>
-
-    <!-- AR scene -->
+    <!-- AR Scene -->
     <a-scene
       embedded
-      vr-mode-ui="enabled: false"
-      renderer="logarithmicDepthBuffer: true;"
-      device-orientation-permission-ui="enabled: true"
       arjs="sourceType: webcam;"
-      id="ar-scene"
-      style="visibility: hidden"
+      renderer="logarithmicDepthBuffer: true;"
+      vr-mode-ui="enabled: false"
     >
-     <a-assets>
-  <a-asset-item
-    id="model"
-    src="https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models/2.0/RobotExpressive/glTF/RobotExpressive.gltf"
-  ></a-asset-item>
-</a-assets>
+      <a-assets>
+        <!-- Car model -->
+        <a-asset-item
+          id="carModel"
+          src="https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models/2.0/CesiumMilkTruck/glTF/CesiumMilkTruck.gltf"
+        ></a-asset-item>
+      </a-assets>
 
+      <!-- Marker -->
       <a-marker preset="hiro">
-        <!-- GLTF robot model -->
-       <a-box id="player" position="0 0.5 0" color="red"></a-box>
+        <!-- Car entity -->
+        <a-entity
+          id="car"
+          gltf-model="#carModel"
+          scale="0.1 0.1 0.1"
+          position="0 0 0"
+          rotation="0 180 0"
+        ></a-entity>
 
+        <!-- Obstacles -->
+        <a-box
+          id="obs1"
+          position="0.3 0 0.6"
+          depth="0.2"
+          height="0.2"
+          width="0.2"
+          color="#ff3333"
+        ></a-box>
 
-        <!-- Fallback box (optional for testing) -->
-        <!-- <a-box position="0 0.5 0" color="red"></a-box> -->
+        <a-box
+          id="obs2"
+          position="-0.4 0 0.8"
+          depth="0.2"
+          height="0.2"
+          width="0.2"
+          color="#ff3333"
+        ></a-box>
+
+        <!-- Road (visual aid) -->
+        <a-plane
+          rotation="-90 0 0"
+          width="2"
+          height="2"
+          color="#444"
+          opacity="0.4"
+        ></a-plane>
       </a-marker>
 
       <a-entity camera></a-entity>
     </a-scene>
 
-    <!-- Script -->
+    <!-- Game Logic -->
     <script>
-      const overlay = document.getElementById("permission-overlay");
-      const retryBtn = document.getElementById("retry-btn");
-      const joystickZone = document.getElementById("joystick-zone");
-      const attackBtn = document.getElementById("attack-btn");
-      const scene = document.getElementById("ar-scene");
+      const car = document.getElementById("car");
+      const obs1 = document.getElementById("obs1");
+      const obs2 = document.getElementById("obs2");
+      const status = document.getElementById("game-status");
 
-      async function requestCamera() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          stream.getTracks().forEach((t) => t.stop());
+      // Helper: Distance checker
+      function isColliding(pos1, pos2, threshold = 0.15) {
+        const dx = pos1.x - pos2.x;
+        const dz = pos1.z - pos2.z;
+        return Math.sqrt(dx * dx + dz * dz) < threshold;
+      }
 
-          overlay.style.display = "none";
-          scene.style.visibility = "visible";
-          joystickZone.style.display = "block";
-          attackBtn.style.display = "block";
+      // Joystick setup
+      const joystick = nipplejs.create({
+        zone: document.getElementById("joystick-zone"),
+        mode: "static",
+        position: { left: "75px", bottom: "75px" },
+        color: "blue",
+      });
 
-          setupGame();
-        } catch (err) {
-          overlay.style.display = "flex";
-          scene.style.visibility = "hidden";
-          console.error("Camera permission denied", err);
+      // Movement logic
+      joystick.on("move", (evt, data) => {
+        let pos = car.getAttribute("position");
+        const newPos = { ...pos };
+
+        if (data.direction) {
+          if (data.direction.y === "up") newPos.z -= 0.05;
+          if (data.direction.y === "down") newPos.z += 0.05;
+          if (data.direction.x === "left") newPos.x -= 0.05;
+          if (data.direction.x === "right") newPos.x += 0.05;
         }
-      }
 
-      retryBtn.addEventListener("click", requestCamera);
+        // Obstacle positions
+        const o1 = obs1.getAttribute("position");
+        const o2 = obs2.getAttribute("position");
 
-      function setupGame() {
-        const player = document.getElementById("player");
+        // Check for collisions
+        if (isColliding(newPos, o1) || isColliding(newPos, o2)) {
+          status.innerText = "💥 Crash! You hit an obstacle!";
+          return; // Stop movement
+        }
 
-        // Attack button logic
-        attackBtn.addEventListener("click", () => {
-          player.setAttribute("animation", {
-            property: "rotation",
-            to: "0 360 0",
-            dur: 1000,
-            loop: false,
-          });
-        });
-
-        // Virtual joystick logic
-        const joystick = nipplejs.create({
-          zone: joystickZone,
-          mode: "static",
-          position: { left: "75px", bottom: "75px" },
-          color: "green",
-        });
-
-        joystick.on("move", (evt, data) => {
-          if (!data.direction) return;
-          let pos = player.getAttribute("position");
-          if (data.direction.y === "up") pos.z -= 0.05;
-          if (data.direction.y === "down") pos.z += 0.05;
-          if (data.direction.x === "left") pos.x -= 0.05;
-          if (data.direction.x === "right") pos.x += 0.05;
-          player.setAttribute("position", pos);
-        });
-      }
-
-      // Start
-      requestCamera();
+        // Safe to move
+        status.innerText = "🕹️ Move the car to avoid obstacles!";
+        car.setAttribute("position", newPos);
+      });
     </script>
   </body>
 </html>
