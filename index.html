@@ -1,61 +1,181 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>Magic AR Game</title>
+    <meta charset="UTF-8" />
+    <title>AR Magic Game</title>
+
+    <!-- A-Frame and AR.js -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ar.js@3.4.2/aframe/build/aframe-ar.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.min.js"></script>
+
+    <!-- Joystick -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.8.6/nipplejs.min.js"></script>
+
     <style>
-      body { margin: 0; overflow: hidden; }
-      #spellText {
-        position: fixed;
-        top: 10%;
-        width: 100%;
-        text-align: center;
-        color: #fff;
-        font-size: 2em;
-        text-shadow: 2px 2px 5px #000;
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+
+      #joystick-zone {
+        position: absolute;
+        bottom: 50px;
+        left: 50px;
+        width: 150px;
+        height: 150px;
+        z-index: 999;
         display: none;
+      }
+
+      #attack-btn {
+        position: absolute;
+        bottom: 60px;
+        right: 50px;
+        padding: 12px 20px;
+        font-size: 18px;
+        z-index: 999;
+        background-color: red;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        display: none;
+      }
+
+      #permission-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        text-align: center;
+        z-index: 1000;
+        padding: 2rem;
+      }
+
+      #permission-overlay button {
+        margin-top: 20px;
+        padding: 10px 20px;
+        font-size: 16px;
+        background: green;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
       }
     </style>
   </head>
-  <body>
-    <div id="spellText">✨ Fireball Casted! ✨</div>
 
-    <a-scene embedded arjs>
-      <!-- Marker -->
+  <body>
+    <!-- UI -->
+    <div id="joystick-zone"></div>
+    <button id="attack-btn">Attack</button>
+
+    <!-- Camera permission overlay -->
+    <div id="permission-overlay">
+      <h2>📷 Camera Access Needed</h2>
+      <p>Please allow camera access to play the AR game.<br />Reload if needed.</p>
+      <button id="retry-btn">Try Again</button>
+    </div>
+
+    <!-- AR scene -->
+    <a-scene
+      embedded
+      vr-mode-ui="enabled: false"
+      renderer="logarithmicDepthBuffer: true;"
+      device-orientation-permission-ui="enabled: true"
+      arjs="sourceType: webcam;"
+      id="ar-scene"
+      style="visibility: hidden"
+    >
+      <a-assets>
+        <a-asset-item
+          id="model"
+          src="https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models/2.0/RobotExpressive/glTF/RobotExpressive.gltf"
+        ></a-asset-item>
+      </a-assets>
+
       <a-marker preset="hiro">
-        <!-- Magic Orb -->
-        <a-sphere id="magicOrb" color="purple" radius="0.3" position="0 0.5 0"
-                  animation__float="property: position; dir: alternate; dur: 1000; loop: true; to: 0 0.7 0">
-        </a-sphere>
+        <!-- GLTF robot model -->
+        <a-entity
+          id="player"
+          gltf-model="#model"
+          scale="0.5 0.5 0.5"
+          position="0 0 0.5"
+          rotation="0 180 0"
+        ></a-entity>
+
+        <!-- Fallback box (optional for testing) -->
+        <!-- <a-box position="0 0.5 0" color="red"></a-box> -->
       </a-marker>
 
-      <!-- Camera -->
       <a-entity camera></a-entity>
-
-      <!-- Audio -->
-      <a-assets>
-        <audio id="castSound" src="https://cdn.pixabay.com/audio/2021/10/28/audio_1ddfb1e93b.mp3"></audio>
-      </a-assets>
     </a-scene>
 
+    <!-- Script -->
     <script>
-      const orb = document.querySelector('#magicOrb');
-      const spellText = document.querySelector('#spellText');
-      const castSound = document.querySelector('#castSound');
+      const overlay = document.getElementById("permission-overlay");
+      const retryBtn = document.getElementById("retry-btn");
+      const joystickZone = document.getElementById("joystick-zone");
+      const attackBtn = document.getElementById("attack-btn");
+      const scene = document.getElementById("ar-scene");
 
-      orb.addEventListener('click', () => {
-        // Change color to simulate casting
-        orb.setAttribute('color', 'orange');
-        castSound.play();
+      async function requestCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          stream.getTracks().forEach((t) => t.stop());
 
-        // Show spell text
-        spellText.style.display = 'block';
-        setTimeout(() => {
-          spellText.style.display = 'none';
-          orb.setAttribute('color', 'purple'); // reset
-        }, 2000);
-      });
+          overlay.style.display = "none";
+          scene.style.visibility = "visible";
+          joystickZone.style.display = "block";
+          attackBtn.style.display = "block";
+
+          setupGame();
+        } catch (err) {
+          overlay.style.display = "flex";
+          scene.style.visibility = "hidden";
+          console.error("Camera permission denied", err);
+        }
+      }
+
+      retryBtn.addEventListener("click", requestCamera);
+
+      function setupGame() {
+        const player = document.getElementById("player");
+
+        // Attack button logic
+        attackBtn.addEventListener("click", () => {
+          player.setAttribute("animation", {
+            property: "rotation",
+            to: "0 360 0",
+            dur: 1000,
+            loop: false,
+          });
+        });
+
+        // Virtual joystick logic
+        const joystick = nipplejs.create({
+          zone: joystickZone,
+          mode: "static",
+          position: { left: "75px", bottom: "75px" },
+          color: "green",
+        });
+
+        joystick.on("move", (evt, data) => {
+          if (!data.direction) return;
+          let pos = player.getAttribute("position");
+          if (data.direction.y === "up") pos.z -= 0.05;
+          if (data.direction.y === "down") pos.z += 0.05;
+          if (data.direction.x === "left") pos.x -= 0.05;
+          if (data.direction.x === "right") pos.x += 0.05;
+          player.setAttribute("position", pos);
+        });
+      }
+
+      // Start
+      requestCamera();
     </script>
   </body>
 </html>
