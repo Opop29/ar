@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Magic AR Game</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ar.js@3.4.2/aframe/build/aframe-ar.min.js"></script>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      #spellText {
+        position: fixed;
+        top: 10%;
+        width: 100%;
+        text-align: center;
+        color: #fff;
+        font-size: 2em;
+        text-shadow: 2px 2px 5px #000;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="spellText">✨ Fireball Casted! ✨</div>
+
+    <a-scene embedded arjs>
+      <!-- Marker -->
+      <a-marker preset="hiro">
+        <!-- Magic Orb -->
+        <a-sphere id="magicOrb" color="purple" radius="0.3" position="0 0.5 0"
+                  animation__float="property: position; dir: alternate; dur: 1000; loop: true; to: 0 0.7 0">
+        </a-sphere>
+      </a-marker>
+
+      <!-- Camera -->
+      <a-entity camera></a-entity>
+
+      <!-- Audio -->
+      <a-assets>
+        <audio id="castSound" src="https://cdn.pixabay.com/audio/2021/10/28/audio_1ddfb1e93b.mp3"></audio>
+      </a-assets>
+    </a-scene>
+
+    <script>
+      const orb = document.querySelector('#magicOrb');
+      const spellText = document.querySelector('#spellText');
+      const castSound = document.querySelector('#castSound');
+
+      orb.addEventListener('click', () => {
+        // Change color to simulate casting
+        orb.setAttribute('color', 'orange');
+        castSound.play();
+
+        // Show spell text
+        spellText.style.display = 'block';
+        setTimeout(() => {
+          spellText.style.display = 'none';
+          orb.setAttribute('color', 'purple'); // reset
+        }, 2000);
+      });
+    </script>
+  </body>
+</html>
