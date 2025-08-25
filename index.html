@@ -3,343 +3,185 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Indoor AR Arrow Navigator (HTML + JS, No ARCore)</title>
+  <title>Indoor AR Navigation (Floating Pen Demo)</title>
   <style>
-    :root{
-      --bg:#0c0f14; --fg:#e9eef6; --muted:#9fb1c7; --card:#121722; --line:#223047; --accent:#69d2ff;
+    body {margin:0; font-family:sans-serif; background:#000; color:#fff;}
+    header {padding:10px; background:#111; text-align:center;}
+    video {width:100%; height:60vh; object-fit:cover; background:#000;}
+    .overlay {
+      position:absolute; inset:0;
+      display:flex; justify-content:center; align-items:center;
+      pointer-events:none;
     }
-    *{box-sizing:border-box}
-    body{margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; color:var(--fg); background:var(--bg)}
-    header{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--line)}
-    h1{font-size:18px; margin:0; letter-spacing:.2px}
-    .wrap{display:grid; gap:12px; padding:14px}
-    @media (min-width:980px){ .wrap{grid-template-columns:1.1fr .9fr; align-items:start} }
 
-    .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px}
-    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
-    .controls button{appearance:none; border:0; padding:10px 12px; border-radius:12px; background:linear-gradient(180deg,#2a78ff,#0066ff); color:white; font-weight:600; cursor:pointer}
-    .controls button.secondary{background:#17202c; border:1px solid #2a3a50; color:#dfe9f8}
-    .controls select, .controls input{background:#0e141c; border:1px solid #243246; color:var(--fg); padding:10px 12px; border-radius:12px}
+    /* Floating glowing pen */
+    .arrow {
+      position:relative;
+      width: 14px;
+      height: 120px;
+      background: linear-gradient(to bottom, #00ffea, #0066ff);
+      border-radius: 8px;
+      box-shadow: 0 0 20px #00ffee, 0 0 40px #00aaff;
+      animation: float 2s ease-in-out infinite;
+      transform-origin: center bottom;
+    }
+    /* pointy glowing tip */
+    .arrow::after {
+      content: "";
+      position: absolute;
+      top: -20px; left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-bottom: 20px solid #00ffee;
+      filter: drop-shadow(0 0 10px #00ffee);
+    }
+    @keyframes float {
+      0%   { transform: translateY(0) scale(1); }
+      50%  { transform: translateY(-10px) scale(1.05); }
+      100% { transform: translateY(0) scale(1); }
+    }
 
-    .viewer{position:relative; border-radius:18px; overflow:hidden; background:#000}
-    video{width:100%; height:min(55svh,60vh); object-fit:cover; display:block; background:#000}
-    .overlay{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none}
-    .arrow{width:0; height:0; border-left:26px solid transparent; border-right:26px solid transparent; border-bottom:70px solid var(--accent); filter:drop-shadow(0 12px 22px rgba(105,210,255,.5)); transition:transform .08s linear}
-    .bubble{position:absolute; bottom:12px; right:12px; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.12); padding:8px 10px; border-radius:12px; font-size:12px}
-
-    .panel{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px}
-    .stat{background:#0f1520; border:1px solid var(--line); border-radius:14px; padding:12px}
-    .stat .k{font-size:11px; color:var(--muted)}
-    .stat .v{font:600 18px/1.2 Inter, ui-sans-serif}
-
-    .map{position:relative; height:320px; border-radius:12px; overflow:hidden; background:repeating-linear-gradient(90deg,#0e1219 0,#0e1219 19px,#0c1016 20px), repeating-linear-gradient(0deg,#0e1219 0,#0e1219 19px,#0c1016 20px); border:1px dashed #2a3a50}
-    .map .node{position:absolute; transform:translate(-50%,-50%); padding:4px 8px; background:#122338; border:1px solid #254461; border-radius:10px; font-size:11px}
-    .map .you{position:absolute; transform:translate(-50%,-50%); width:18px; height:18px; border-radius:50%; background:#69d2ff; box-shadow:0 0 0 6px rgba(105,210,255,.2)}
-    .map .path{position:absolute; inset:0; pointer-events:none}
-    canvas{display:block}
-    .note{font-size:12px; color:var(--muted)}
+    .controls {padding:15px; background:#111;}
+    select, button {
+      padding:10px; font-size:16px; margin:5px;
+      border-radius:8px; border:none;
+    }
+    select {width:150px;}
+    button {background:#00bfff; color:#fff; cursor:pointer;}
+    .status {margin-top:10px; font-size:14px; color:#ccc;}
   </style>
 </head>
 <body>
   <header>
-    <h1>Indoor AR Arrow Navigator (No ARCore)</h1>
-    <div class="row controls">
-      <button id="btnStart">Start Sensors</button>
-      <button id="btnCamera" class="secondary">Toggle Camera</button>
-    </div>
+    <h1>Indoor AR Navigation (Floating Pen)</h1>
   </header>
 
-  <div class="wrap">
-    <!-- Camera + Arrow overlay -->
-    <section class="card viewer">
-      <video id="video" playsinline muted></video>
-      <div class="overlay">
-        <div id="arrow" class="arrow" title="Direction arrow"></div>
-        <div class="bubble">Target: <span id="targetLbl">—</span></div>
-      </div>
-    </section>
+  <div style="position:relative">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="overlay"><div id="arrow" class="arrow"></div></div>
+  </div>
 
-    <!-- Controls -->
-    <section class="card">
-      <div class="row controls">
-        <label for="selStart">Start</label>
-        <select id="selStart"></select>
-        <label for="selDest">Destination</label>
-        <select id="selDest"></select>
-        <button id="btnRoute">Route</button>
-      </div>
-      <div class="row controls" style="margin-top:10px">
-        <button id="btnStep" class="secondary">Simulate Step</button>
-        <button id="btnSnapNode" class="secondary" title="Snap to nearest waypoint">Snap to Node</button>
-        <button id="btnReset" class="secondary">Reset</button>
-        <label><input type="checkbox" id="chkAutoStep"> Auto step (experimental)</label>
-      </div>
-      <p class="note">This prototype uses a simple house map + compass. Movement is simulated by steps (button or experimental step detection); the arrow rotates toward the next waypoint. Use HTTPS on a real phone for sensors/camera.</p>
-    </section>
+  <div class="controls">
+    <label>Current Location: </label>
+    <select id="current">
+      <option value="Entrance">Entrance</option>
+      <option value="Dining">Dining</option>
+      <option value="Room1">Room 1</option>
+      <option value="Room2">Room 2</option>
+      <option value="CR">CR</option>
+    </select><br/>
 
-    <!-- Stats + mini-map -->
-    <section class="card panel">
-      <div class="stat"><div class="k">Heading (° from N)</div><div class="v" id="heading">–</div></div>
-      <div class="stat"><div class="k">Bearing to Next</div><div class="v" id="bearing">–</div></div>
-      <div class="stat"><div class="k">Relative Direction</div><div class="v" id="relative">–</div></div>
-      <div class="stat"><div class="k">Segment Distance</div><div class="v" id="segdist">–</div></div>
-      <div class="stat"><div class="k">You @</div><div class="v" id="me">–</div></div>
-      <div class="stat"><div class="k">Next Waypoint</div><div class="v" id="next">–</div></div>
-    </section>
+    <label>Destination: </label>
+    <select id="destination">
+      <option value="CR">CR</option>
+      <option value="Room1">Room 1</option>
+      <option value="Room2">Room 2</option>
+      <option value="Dining">Dining</option>
+      <option value="Entrance">Entrance</option>
+    </select><br/>
 
-    <section class="card">
-      <div class="map" id="map">
-        <canvas id="mapCanvas" width="640" height="320" class="path"></canvas>
-        <!-- nodes & you badge injected by JS -->
-      </div>
-    </section>
-
-    <section class="card">
-      <details>
-        <summary>Setup Notes</summary>
-        <ol>
-          <li>Adjust the <strong>houseMap</strong> coordinates in the code to match your layout (units = meters). Each room (CR, Room 1, Room 2, Dining Room) is a node.</li>
-          <li>Pick your <em>Start</em> and <em>Destination</em>, press <strong>Route</strong>.</li>
-          <li>Face a direction and tap <strong>Start Sensors</strong> to enable the compass; the arrow will rotate as you turn.</li>
-          <li>Move via <strong>Simulate Step</strong> (0.8 m each) or try <em>Auto step</em> (experimental).</li>
-        </ol>
-      </details>
-    </section>
+    <button id="startBtn">Start Navigation</button>
+    <button id="nextBtn">Next Step</button>
+    <div class="status" id="status">Choose a start and destination.</div>
   </div>
 
   <script>
-    // ===================== House Map (EDIT THESE to your layout) =====================
-    // Coordinates in meters on a simple 2D plane. (0,0) top-left of your sketch.
-    // Example layout (rough):
-    // Entrance -> Hall -> Dining -> branches to Room1, Room2, CR
+    // --- Camera background ---
+    const video = document.getElementById('video');
+    async function initCamera(){
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" }, audio:false });
+        video.srcObject = stream;
+      } catch(e){
+        console.warn("Camera error", e);
+      }
+    }
+    initCamera();
+
+    // --- House Map (Graph)
     const houseMap = {
-      scale: 40, // pixels per meter for the mini-map only
-      nodes: {
-        Entrance: { x: 2,  y: 6 },
-        Hall:     { x: 6,  y: 6 },
-        Dining:   { x: 10, y: 6 },
-        "Room 1": { x: 14, y: 4 },
-        "Room 2": { x: 14, y: 8 },
-        CR:       { x: 12, y: 10 }
-      },
-      edges: [
-        ['Entrance','Hall'],
-        ['Hall','Dining'],
-        ['Dining','Room 1'],
-        ['Dining','Room 2'],
-        ['Dining','CR']
-      ]
+      Entrance: ["Dining"],
+      Dining: ["Entrance", "Room1", "Room2", "CR"],
+      Room1: ["Dining"],
+      Room2: ["Dining"],
+      CR: ["Dining"]
     };
 
-    const ALL_ROOMS = Object.keys(houseMap.nodes);
+    // Predefined arrow directions (fake AR for demo)
+    const arrowDirections = {
+      "Entrance->Dining": 0,
+      "Dining->Room1": -90,
+      "Dining->Room2": 90,
+      "Dining->CR": 180,
+      "Dining->Entrance": 180,
+      "Room1->Dining": 90,
+      "Room2->Dining": -90,
+      "CR->Dining": 0
+    };
 
-    // ===================== Utilities =====================
-    const toRad = d => d*Math.PI/180; const toDeg = r => r*180/Math.PI; const clamp360 = x => (x%360+360)%360;
-    function dist(a,b){ const dx=b.x-a.x, dy=b.y-a.y; return Math.hypot(dx,dy); }
-    function bearingXY(a,b){ // 0°=North (negative Y), clockwise
-      const dx=b.x-a.x, dy=b.y-a.y; // canvas y+ downward
-      const ang = Math.atan2(dx, -dy); // x to the right, -y up
-      return clamp360(toDeg(ang));
-    }
+    // --- Navigation state
+    let currentRoom = "Entrance";
+    let path = [];
+    let stepIndex = 0;
 
-    // Dijkstra for shortest path on unweighted graph
-    function shortestPath(start, goal){
-      const nodes = houseMap.nodes; const edges = houseMap.edges;
-      const adj = {}; ALL_ROOMS.forEach(n=>adj[n]=[]); edges.forEach(([a,b])=>{adj[a].push(b); adj[b].push(a)});
-      const prev = {}; const q=[start]; const seen=new Set([start]);
-      while(q.length){
-        const n = q.shift(); if(n===goal) break; for(const m of adj[n]) if(!seen.has(m)){ seen.add(m); prev[m]=n; q.push(m); }
-      }
-      if(!seen.has(goal)) return null; // no route
-      const path=[goal]; let cur=goal; while(cur!==start){ cur = prev[cur]; path.push(cur); }
-      return path.reverse();
-    }
+    const arrow = document.getElementById('arrow');
+    const status = document.getElementById('status');
 
-    // ===================== State =====================
-    const stepLen = 0.8; // meters per simulated step
-    let path = []; // array of node names
-    let segIdx = 0; // path segment index (from path[segIdx] -> path[segIdx+1])
-    let mePos = { ...houseMap.nodes.Entrance }; // current (x,y) in meters
-    let heading = null; // device heading (0..360 from North)
-
-    // Smoothers
-    function smoother(alpha){ let v=null; return x=>{ v=(v==null)?x:(v+alpha*(x-v)); return v; }; }
-    const smoothHeading = smoother(0.25);
-    const smoothBearing = smoother(0.35);
-
-    // ===================== DOM refs =====================
-    const elStart = document.getElementById('selStart');
-    const elDest = document.getElementById('selDest');
-    const elTargetLbl = document.getElementById('targetLbl');
-    const elArrow = document.getElementById('arrow');
-    const elHeading = document.getElementById('heading');
-    const elBearing = document.getElementById('bearing');
-    const elRelative = document.getElementById('relative');
-    const elSegDist = document.getElementById('segdist');
-    const elMe = document.getElementById('me');
-    const elNext = document.getElementById('next');
-    const mapEl = document.getElementById('map');
-    const mapCanvas = document.getElementById('mapCanvas');
-    const ctx = mapCanvas.getContext('2d');
-    let youDot = null; // DOM element for your position
-
-    // ===================== Init selects =====================
-    function fillSelects(){
-      for(const name of ALL_ROOMS){
-        const o1=document.createElement('option'); o1.value=o1.textContent=name; elStart.appendChild(o1);
-        const o2=document.createElement('option'); o2.value=o2.textContent=name; elDest.appendChild(o2);
-      }
-      elStart.value='Entrance'; elDest.value='Dining';
-      elTargetLbl.textContent = elDest.value;
-    }
-
-    // ===================== Map rendering =====================
-    function metersToPx(p){ return { x: p.x*houseMap.scale + 20, y: p.y*houseMap.scale + 20 }; }
-    function drawMap(){
-      ctx.clearRect(0,0,mapCanvas.width,mapCanvas.height);
-      // edges
-      ctx.lineWidth=3; ctx.strokeStyle='#2e445e'; ctx.beginPath();
-      for(const [a,b] of houseMap.edges){
-        const A=metersToPx(houseMap.nodes[a]); const B=metersToPx(houseMap.nodes[b]);
-        ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y);
-      }
-      ctx.stroke();
-      // path highlight
-      if(path && path.length>1){
-        ctx.lineWidth=5; ctx.strokeStyle='#69d2ff'; ctx.beginPath();
-        for(let i=0;i<path.length-1;i++){
-          const A=metersToPx(houseMap.nodes[path[i]]); const B=metersToPx(houseMap.nodes[path[i+1]]);
-          ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y);
-        }
-        ctx.stroke();
-      }
-    }
-
-    function placeNodes(){
-      // remove existing node labels
-      [...mapEl.querySelectorAll('.node')].forEach(n=>n.remove());
-      // add node labels
-      for(const [name, p] of Object.entries(houseMap.nodes)){
-        const d=document.createElement('div'); d.className='node'; d.textContent=name;
-        const px=metersToPx(p); d.style.left=px.x+'px'; d.style.top=px.y+'px'; mapEl.appendChild(d);
-      }
-      // you dot
-      if(!youDot){ youDot=document.createElement('div'); youDot.className='you'; mapEl.appendChild(youDot); }
-      updateYouDot();
-    }
-
-    function updateYouDot(){ const px=metersToPx(mePos); youDot.style.left=px.x+'px'; youDot.style.top=px.y+'px'; }
-
-    // ===================== Routing =====================
-    function route(){
-      const s = elStart.value; const d = elDest.value; if(s===d) return;
-      const p = shortestPath(s,d); if(!p){ alert('No route between nodes.'); return; }
-      path = p; segIdx=0; mePos = { ...houseMap.nodes[s] }; updateYouDot();
-      elTargetLbl.textContent = d; computeAndRender(); drawMap();
-    }
-
-    // Advance along current segment by len meters
-    function advance(len){
-      if(!path || path.length<2) return;
-      const curNode = houseMap.nodes[path[segIdx]];
-      const nxtNode = houseMap.nodes[path[segIdx+1]];
-      const segLen = dist(curNode, nxtNode);
-      const vx = (nxtNode.x - curNode.x) / segLen;
-      const vy = (nxtNode.y - curNode.y) / segLen;
-      // project me onto segment to track progress
-      const proj = ((mePos.x - curNode.x)*vx + (mePos.y - curNode.y)*vy);
-      let newT = Math.min(segLen, Math.max(0, proj + len));
-      mePos = { x: curNode.x + vx*newT, y: curNode.y + vy*newT };
-      updateYouDot();
-      if(dist(mePos, nxtNode) < 0.5){ // reached waypoint (0.5 m threshold)
-        segIdx++;
-        if(segIdx >= path.length-1){
-          // arrived!
-          elNext.textContent = 'ARRIVED';
+    function findPath(start, dest){
+      // BFS pathfinding
+      const queue = [[start]];
+      const visited = new Set([start]);
+      while(queue.length){
+        const path = queue.shift();
+        const node = path[path.length-1];
+        if(node === dest) return path;
+        for(const nei of houseMap[node]||[]){
+          if(!visited.has(nei)){
+            visited.add(nei);
+            queue.push([...path, nei]);
+          }
         }
       }
-      computeAndRender(); drawMap();
+      return null;
     }
 
-    // ===================== Sensors (heading) =====================
-    async function startSensors(){
-      try{
-        if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-          const perm = await DeviceOrientationEvent.requestPermission();
-          console.log('Motion permission:', perm);
-        }
-      }catch(e){ console.warn('Orientation permission flow:', e); }
-      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      window.addEventListener('deviceorientation', handleOrientation, true);
-    }
-    function handleOrientation(ev){
-      let hdg=null;
-      if(typeof ev.webkitCompassHeading === 'number') hdg = ev.webkitCompassHeading; // iOS
-      else if(typeof ev.alpha === 'number') hdg = 360 - ev.alpha; // fallback
-      if(hdg!=null){ heading = clamp360(smoothHeading(hdg)); computeAndRender(); }
-    }
-
-    // ===================== Camera =====================
-    let stream=null; const video = document.getElementById('video');
-    async function toggleCamera(){
-      try{
-        if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; video.srcObject=null; return; }
-        stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
-        video.srcObject = stream; await video.play();
-      }catch(e){ console.warn('Camera error', e); alert('Could not start camera: '+e.message); }
-    }
-
-    // ===================== Auto step (experimental) =====================
-    let autoStep=false; let lastAccT=0; let movingAvg=0; let stepCooldown=0;
-    function enableAutoStep(flag){ autoStep=flag; if(flag){ window.addEventListener('devicemotion', onMotion); } else { window.removeEventListener('devicemotion', onMotion); } }
-    function onMotion(ev){
-      const a = ev.accelerationIncludingGravity; if(!a) return; const mag = Math.hypot(a.x||0,a.y||0,a.z||0);
-      const t = performance.now(); const dt = t - lastAccT; lastAccT=t;
-      // simple high-pass by subtracting a slow moving average
-      movingAvg = movingAvg*0.98 + mag*0.02; const hp = mag - movingAvg;
-      if(hp>2.0 && stepCooldown<=0){ // crude threshold
-        advance(stepLen);
-        stepCooldown = 250; // ms
+    function updateArrow(){
+      if(stepIndex >= path.length-1){
+        status.textContent = `Arrived at ${path[path.length-1]} 🎉`;
+        arrow.style.display = "none";
+        return;
       }
-      if(stepCooldown>0) stepCooldown -= dt;
+      const from = path[stepIndex];
+      const to = path[stepIndex+1];
+      const key = `${from}->${to}`;
+      const dir = arrowDirections[key] ?? 0;
+      arrow.style.transform = `rotate(${dir}deg)`;
+      arrow.style.display = "block";
+      status.textContent = `Go from ${from} → ${to}`;
     }
 
-    // ===================== Core compute & render =====================
-    function computeAndRender(){
-      if(!path || path.length<2) { elBearing.textContent='–'; elRelative.textContent='–'; elSegDist.textContent='–'; elNext.textContent='–'; return; }
-      const curName = path[segIdx]; const nxtName = path[segIdx+1];
-      const curNode = houseMap.nodes[curName]; const nxtNode = houseMap.nodes[nxtName];
-      const brg = smoothBearing(bearingXY(mePos, nxtNode));
-      const rel = (heading==null) ? null : clamp360(brg - heading);
-      const segd = dist(mePos, nxtNode);
-
-      // rotate arrow
-      if(rel!=null){ elArrow.style.transform = `rotate(${rel}deg)`; }
-
-      // stats
-      elHeading.textContent = heading==null ? '–' : heading.toFixed(1);
-      elBearing.textContent = brg.toFixed(1)+'°';
-      elRelative.textContent = rel==null ? '–' : rel.toFixed(1)+'°';
-      elSegDist.textContent = segd.toFixed(1)+' m';
-      elMe.textContent = `(${mePos.x.toFixed(1)}, ${mePos.y.toFixed(1)}) m`;
-      elNext.textContent = `${curName} → ${nxtName}`;
-    }
-
-    // ===================== Wire up =====================
-    document.getElementById('btnRoute').addEventListener('click', route);
-    document.getElementById('btnStep').addEventListener('click', ()=>advance(stepLen));
-    document.getElementById('btnReset').addEventListener('click', ()=>{ segIdx=0; mePos={...houseMap.nodes[elStart.value]}; updateYouDot(); computeAndRender(); drawMap(); });
-    document.getElementById('btnSnapNode').addEventListener('click', ()=>{
-      // Snap to nearest node
-      let best=null, bestD=1e9; for(const [name,p] of Object.entries(houseMap.nodes)){ const d=dist(mePos,p); if(d<bestD){bestD=d; best=name;} }
-      if(best){ mePos={...houseMap.nodes[best]}; updateYouDot(); computeAndRender(); drawMap(); elStart.value=best; }
+    document.getElementById('startBtn').addEventListener('click', ()=>{
+      const start = document.getElementById('current').value;
+      const dest = document.getElementById('destination').value;
+      currentRoom = start;
+      path = findPath(start, dest);
+      if(!path){
+        status.textContent = "No path found.";
+        return;
+      }
+      stepIndex = 0;
+      updateArrow();
     });
-    document.getElementById('btnStart').addEventListener('click', startSensors);
-    document.getElementById('btnCamera').addEventListener('click', toggleCamera);
-    document.getElementById('chkAutoStep').addEventListener('change', e=>enableAutoStep(e.target.checked));
 
-    // Init
-    fillSelects(); placeNodes(); drawMap(); computeAndRender();
+    document.getElementById('nextBtn').addEventListener('click', ()=>{
+      if(stepIndex < path.length-1){
+        stepIndex++;
+        currentRoom = path[stepIndex];
+        updateArrow();
+      }
+    });
   </script>
 </body>
 </html>
