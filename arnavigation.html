@@ -8,51 +8,12 @@
   <script src="https://cdn.jsdelivr.net/npm/aframe-gps-camera@1.7.0/dist/aframe-gps-camera.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-gps-entity-place@1.7.0/dist/aframe-gps-entity-place.min.js"></script>
   <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-    /* HUD Overlays */
-    .hud {
-      position: absolute;
-      z-index: 9999;
-      color: white;
-    }
-    #etaBox {
-      top: 15px;
-      left: 15px;
-      background: rgba(0,0,0,0.6);
-      padding: 10px;
-      border-radius: 8px;
-    }
-    #directionBox {
-      top: 15px;
-      right: 15px;
-      background: rgba(0,0,0,0.6);
-      padding: 10px;
-      border-radius: 8px;
-      text-align: right;
-    }
-    #compass {
-      bottom: 15px;
-      right: 15px;
-      background: rgba(0,0,0,0.6);
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #time {
-      bottom: 15px;
-      left: 15px;
-      background: rgba(0,0,0,0.6);
-      padding: 8px;
-      border-radius: 6px;
-    }
+    body, html { margin:0; padding:0; overflow:hidden; font-family:Arial,sans-serif; }
+    .hud { position:absolute; z-index:9999; color:white; font-size:14px; }
+    #etaBox { top:15px; left:15px; background:rgba(0,0,0,0.6); padding:10px; border-radius:8px; }
+    #directionBox { top:15px; right:15px; background:rgba(0,0,0,0.6); padding:10px; border-radius:8px; text-align:right; }
+    #compass { bottom:15px; right:15px; background:rgba(0,0,0,0.6); width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+    #time { bottom:15px; left:15px; background:rgba(0,0,0,0.6); padding:8px; border-radius:6px; }
   </style>
 </head>
 <body>
@@ -63,17 +24,12 @@
   </div>
 
   <div id="directionBox" class="hud">
-    <div><span id="distance">--</span> ft</div>
+    <div><span id="distance">--</span> m</div>
     <div>Turn <span id="turn">--</span> on <b id="street">--</b></div>
   </div>
 
-  <div id="compass" class="hud">
-    🧭
-  </div>
-
-  <div id="time" class="hud">
-    <span id="clock">--:--</span>
-  </div>
+  <div id="compass" class="hud">🧭</div>
+  <div id="time" class="hud"><span id="clock">--:--</span></div>
 
   <!-- A-Frame Scene -->
   <a-scene
@@ -81,20 +37,21 @@
     embedded
     arjs="sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
   >
-    <!-- GPS Camera -->
     <a-camera gps-camera rotation-reader></a-camera>
   </a-scene>
 
   <script>
-    // Example saved locations (from Supabase or localStorage)
+    // Example route (replace with Supabase fetch)
     const route = [
-      { lat: 37.7749, lon: -122.4194, name: "Market St", turn: "right", distance: 50 },
-      { lat: 37.7755, lon: -122.4180, name: "Smithe St", turn: "left", distance: 120 }
+      { lat: 37.7749, lon: -122.4194, name: "Market St", turn: "right" },
+      { lat: 37.7755, lon: -122.4180, name: "Smithe St", turn: "left" }
     ];
 
     const scene = document.querySelector("a-scene");
+    let currentIndex = 0;
+    let userPos = { lat: null, lon: null };
 
-    // Place arrows on route
+    // Add arrows for all waypoints
     route.forEach(loc => {
       const arrow = document.createElement("a-entity");
       arrow.setAttribute("gps-entity-place", `latitude: ${loc.lat}; longitude: ${loc.lon}`);
@@ -104,19 +61,52 @@
       scene.appendChild(arrow);
     });
 
-    // Update HUD clock
+    // Distance calculator (Haversine)
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; // meters
+      const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
+      const Δφ = (lat2-lat1) * Math.PI/180;
+      const Δλ = (lon2-lon1) * Math.PI/180;
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // Update HUD
+    function updateHUD() {
+      if (userPos.lat === null) return;
+
+      const target = route[currentIndex];
+      const dist = getDistance(userPos.lat, userPos.lon, target.lat, target.lon);
+
+      document.getElementById("distance").textContent = dist.toFixed(1);
+      document.getElementById("turn").textContent = target.turn;
+      document.getElementById("street").textContent = target.name;
+
+      // Switch to next waypoint if close enough
+      if (dist < 10 && currentIndex < route.length-1) {
+        currentIndex++;
+      }
+
+      // Mock ETA/duration (you can replace with real API like OSRM or Google Maps)
+      document.getElementById("eta").textContent = new Date(Date.now() + dist*100).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      document.getElementById("duration").textContent = Math.ceil(dist/80) + " min"; // ~80m/min walking
+    }
+
+    // GPS tracking
+    navigator.geolocation.watchPosition(pos => {
+      userPos.lat = pos.coords.latitude;
+      userPos.lon = pos.coords.longitude;
+      updateHUD();
+    }, err => console.error(err), { enableHighAccuracy:true });
+
+    // Clock updater
     setInterval(() => {
       const now = new Date();
-      document.getElementById("clock").textContent =
-        now.getHours() + ":" + String(now.getMinutes()).padStart(2, '0');
+      document.getElementById("clock").textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     }, 1000);
-
-    // Mock ETA + direction
-    document.getElementById("eta").textContent = "3:05 PM";
-    document.getElementById("duration").textContent = "14 min";
-    document.getElementById("distance").textContent = "50";
-    document.getElementById("turn").textContent = "right";
-    document.getElementById("street").textContent = "Smithe St";
   </script>
 </body>
 </html>
