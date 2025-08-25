@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Simple AR Arrow</title>
+    <title>Simple Floating AR Arrow</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/aframe-ar@1.8.2/dist/aframe-ar.min.js"></script>
     <style>
@@ -10,17 +10,21 @@
     </style>
   </head>
   <body>
+    <!-- AR.js scene: will request camera permission automatically -->
     <a-scene
       vr-mode-ui="enabled: false"
       embedded
       arjs="sourceType: webcam; debugUIEnabled: false;">
       
-      <!-- Simple arrow made of a cone + cylinder -->
-      <a-entity position="0 0 -2" rotation="0 0 0">
-        <a-cone color="red" height="1" radius-bottom="0.3" position="0 0.7 0"></a-cone>
-        <a-cylinder color="red" height="1" radius="0.1" position="0 -0.3 0"></a-cylinder>
+      <!-- Floating arrow always in front of the user -->
+      <a-entity position="0 0 -2">
+        <!-- Arrow head -->
+        <a-cone color="red" height="0.8" radius-bottom="0.3" position="0 0.5 0"></a-cone>
+        <!-- Arrow shaft -->
+        <a-cylinder color="red" height="1" radius="0.1" position="0 -0.2 0"></a-cylinder>
       </a-entity>
       
+      <!-- Static AR camera -->
       <a-camera-static></a-camera-static>
     </a-scene>
   </body>
