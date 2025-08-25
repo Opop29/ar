@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AR Navigation</title>
+  <title>AR Navigation HUD</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-gps-camera@1.7.0/dist/aframe-gps-camera.min.js"></script>
@@ -12,39 +12,70 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
+      font-family: Arial, sans-serif;
     }
-    #backBtn {
+    /* HUD Overlays */
+    .hud {
       position: absolute;
+      z-index: 9999;
+      color: white;
+    }
+    #etaBox {
       top: 15px;
       left: 15px;
-      padding: 10px 15px;
-      background: #4CAF50;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      z-index: 9999;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
     }
-    #selector {
-      position: absolute;
+    #directionBox {
       top: 15px;
       right: 15px;
-      z-index: 9999;
+      background: rgba(0,0,0,0.6);
       padding: 10px;
+      border-radius: 8px;
+      text-align: right;
+    }
+    #compass {
+      bottom: 15px;
+      right: 15px;
+      background: rgba(0,0,0,0.6);
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #time {
+      bottom: 15px;
+      left: 15px;
+      background: rgba(0,0,0,0.6);
+      padding: 8px;
       border-radius: 6px;
-      border: 1px solid #ccc;
-      font-size: 16px;
     }
   </style>
 </head>
 <body>
-  <button id="backBtn" onclick="window.location.href='index.html'">⬅ Back</button>
+  <!-- HUD Panels -->
+  <div id="etaBox" class="hud">
+    <div>ETA: <span id="eta">--</span></div>
+    <div><span id="duration">--</span></div>
+  </div>
 
-  <!-- Dropdown to select specific location -->
-  <select id="selector">
-    <option value="">-- Select Location --</option>
-  </select>
+  <div id="directionBox" class="hud">
+    <div><span id="distance">--</span> ft</div>
+    <div>Turn <span id="turn">--</span> on <b id="street">--</b></div>
+  </div>
 
+  <div id="compass" class="hud">
+    🧭
+  </div>
+
+  <div id="time" class="hud">
+    <span id="clock">--:--</span>
+  </div>
+
+  <!-- A-Frame Scene -->
   <a-scene
     vr-mode-ui="enabled: false"
     embedded
@@ -55,41 +86,37 @@
   </a-scene>
 
   <script>
-    // Load saved locations
-    const locations = JSON.parse(localStorage.getItem("locations")) || [];
+    // Example saved locations (from Supabase or localStorage)
+    const route = [
+      { lat: 37.7749, lon: -122.4194, name: "Market St", turn: "right", distance: 50 },
+      { lat: 37.7755, lon: -122.4180, name: "Smithe St", turn: "left", distance: 120 }
+    ];
+
     const scene = document.querySelector("a-scene");
-    const selector = document.getElementById("selector");
 
-    locations.forEach((loc, index) => {
-      const option = document.createElement("option");
-      option.value = index;
-      option.textContent = loc.name;
-      selector.appendChild(option);
+    // Place arrows on route
+    route.forEach(loc => {
+      const arrow = document.createElement("a-entity");
+      arrow.setAttribute("gps-entity-place", `latitude: ${loc.lat}; longitude: ${loc.lon}`);
+      arrow.setAttribute("gltf-model", "https://cdn.aframe.io/test-models/models/arrow/arrow.gltf");
+      arrow.setAttribute("scale", "5 5 5");
+      arrow.setAttribute("look-at", "[gps-camera]");
+      scene.appendChild(arrow);
     });
 
-    let currentMarker = null;
+    // Update HUD clock
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById("clock").textContent =
+        now.getHours() + ":" + String(now.getMinutes()).padStart(2, '0');
+    }, 1000);
 
-    selector.addEventListener("change", function() {
-      if (currentMarker) {
-        scene.removeChild(currentMarker);
-      }
-
-      const selectedIndex = this.value;
-      if (selectedIndex === "") return;
-
-      const loc = locations[selectedIndex];
-
-      const marker = document.createElement("a-entity");
-      marker.setAttribute("gps-entity-place", `latitude: ${loc.lat}; longitude: ${loc.lon}`);
-      marker.setAttribute("geometry", "primitive: sphere; radius: 3");
-      marker.setAttribute("material", "color: red; opacity: 0.7");
-      marker.setAttribute("look-at", "[gps-camera]");
-      marker.setAttribute("scale", "5 5 5");
-      marker.setAttribute("text", `value: ${loc.name}; align: center; color: #fff;`);
-
-      scene.appendChild(marker);
-      currentMarker = marker;
-    });
+    // Mock ETA + direction
+    document.getElementById("eta").textContent = "3:05 PM";
+    document.getElementById("duration").textContent = "14 min";
+    document.getElementById("distance").textContent = "50";
+    document.getElementById("turn").textContent = "right";
+    document.getElementById("street").textContent = "Smithe St";
   </script>
 </body>
 </html>
