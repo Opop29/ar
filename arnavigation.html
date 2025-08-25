@@ -1,112 +1,248 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>AR Navigation HUD</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-gps-camera@1.7.0/dist/aframe-gps-camera.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-gps-entity-place@1.7.0/dist/aframe-gps-entity-place.min.js"></script>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    window.supabase = createClient(
+      "https://clywxultbpgqlqlorjjh.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNseXd4dWx0YnBncWxxbG9yampoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjAzNzUsImV4cCI6MjA3MTY5NjM3NX0.nAAU2oT9-hy7tekZGsVwNMKzTzZSRCvJWjBEiba8F3U"
+    );
+  </script>
   <style>
-    body, html { margin:0; padding:0; overflow:hidden; font-family:Arial,sans-serif; }
-    .hud { position:absolute; z-index:9999; color:white; font-size:14px; }
-    #etaBox { top:15px; left:15px; background:rgba(0,0,0,0.6); padding:10px; border-radius:8px; }
-    #directionBox { top:15px; right:15px; background:rgba(0,0,0,0.6); padding:10px; border-radius:8px; text-align:right; }
-    #compass { bottom:15px; right:15px; background:rgba(0,0,0,0.6); width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
-    #time { bottom:15px; left:15px; background:rgba(0,0,0,0.6); padding:8px; border-radius:6px; }
+    html,body{margin:0;padding:0;overflow:hidden;font-family:Arial,sans-serif;}
+    .hud{position:absolute;z-index:9999;color:#fff}
+    #back{top:12px;left:12px;background:rgba(0,0,0,.55);border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+    #etaBox{top:12px;left:96px;background:rgba(0,0,0,.55);padding:10px;border-radius:8px}
+    #dirBox{top:12px;right:12px;background:rgba(0,0,0,.55);padding:10px;border-radius:8px;text-align:right}
+    #time{left:12px;bottom:12px;background:rgba(0,0,0,.55);padding:8px;border-radius:6px}
+    #compass{right:12px;bottom:12px;background:rgba(0,0,0,.55);width:100px;height:100px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;font-size:26px}
+    #chooser{top:56px;left:12px;right:12px;background:rgba(0,0,0,.55);padding:10px;border-radius:8px;display:none}
+    #perm{top:56px;right:12px;background:#1e88e5;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
   </style>
 </head>
 <body>
-  <!-- HUD Panels -->
+  <button id="back" class="hud" onclick="location.href='home.html'">⬅ Back</button>
   <div id="etaBox" class="hud">
-    <div>ETA: <span id="eta">--</span></div>
+    <div>ETA: <span id="eta">--:--</span></div>
     <div><span id="duration">--</span></div>
   </div>
-
-  <div id="directionBox" class="hud">
-    <div><span id="distance">--</span> m</div>
-    <div>Turn <span id="turn">--</span> on <b id="street">--</b></div>
+  <div id="dirBox" class="hud">
+    <div><span id="dist">--</span> m</div>
+    <div><span id="hint">Face target</span><br><b id="street">—</b></div>
+  </div>
+  <div id="time" class="hud"><span id="clock">--:--</span></div>
+  <div id="compass" class="hud">🧭</div>
+  <button id="perm" class="hud">Enable Compass</button>
+  <div id="chooser" class="hud">
+    <label style="color:#fff">Target:
+      <select id="targetSel"></select>
+      <button id="goBtn">Go</button>
+    </label>
   </div>
 
-  <div id="compass" class="hud">🧭</div>
-  <div id="time" class="hud"><span id="clock">--:--</span></div>
-
-  <!-- A-Frame Scene -->
   <a-scene
-    vr-mode-ui="enabled: false"
+    vr-mode-ui="enabled:false"
     embedded
-    arjs="sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
+    arjs="sourceType: webcam; facingMode: environment; debugUIEnabled:false;"
   >
     <a-camera gps-camera rotation-reader></a-camera>
   </a-scene>
 
   <script>
-    // Example route (replace with Supabase fetch)
-    const route = [
-      { lat: 37.7749, lon: -122.4194, name: "Market St", turn: "right" },
-      { lat: 37.7755, lon: -122.4180, name: "Smithe St", turn: "left" }
-    ];
+    // ----------------- helpers -----------------
+    const qs = new URLSearchParams(location.search);
+    const fmtClock = d => d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    function haversine(lat1, lon1, lat2, lon2){
+      const R = 6371e3, toRad = d=>d*Math.PI/180;
+      const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+    function bearing(lat1, lon1, lat2, lon2){
+      const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+      const y = Math.sin(toRad(lon2-lon1)) * Math.cos(toRad(lat2));
+      const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) -
+                Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lon2-lon1));
+      return (toDeg(Math.atan2(y,x)) + 360) % 360;
+    }
 
+    // ----------------- state -----------------
+    let user = {lat:null, lon:null, heading:null};
+    let target = null; // {id,name,latitude,longitude}
+    let routeChevrons = []; // a-entities along OSRM path
     const scene = document.querySelector("a-scene");
-    let currentIndex = 0;
-    let userPos = { lat: null, lon: null };
 
-    // Add arrows for all waypoints
-    route.forEach(loc => {
+    // ----------------- UI -----------------
+    document.getElementById("clock").textContent = fmtClock(new Date());
+    setInterval(()=>document.getElementById("clock").textContent = fmtClock(new Date()), 1000);
+
+    // iOS requires a user gesture for compass access
+    const permBtn = document.getElementById("perm");
+    function enableCompass(){
+      if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) {
+        DeviceOrientationEvent.requestPermission().then(state=>{
+          if (state === 'granted'){ bindCompass(); permBtn.style.display='none'; }
+        }).catch(console.warn);
+      } else { // Android/desktop
+        bindCompass();
+        permBtn.style.display='none';
+      }
+    }
+    permBtn.addEventListener('click', enableCompass);
+
+    function bindCompass(){
+      window.addEventListener('deviceorientation', (e)=>{
+        // alpha is 0-360; on some devices it's relative; good enough for hinting
+        if (typeof e.alpha === 'number') user.heading = e.alpha;
+      }, true);
+    }
+
+    // ----------------- GPS watch -----------------
+    if (navigator.geolocation){
+      navigator.geolocation.watchPosition(p=>{
+        user.lat = p.coords.latitude;
+        user.lon = p.coords.longitude;
+        updateHUD();
+      }, console.warn, {enableHighAccuracy:true, maximumAge:1000, timeout:10000});
+    }
+
+    // ----------------- Supabase fetch -----------------
+    async function getAllLocations(){
+      const { data, error } = await window.supabase.from('locations').select('*').order('id');
+      if (error) { console.error(error); return []; }
+      return data;
+    }
+    async function getLocationById(id){
+      const { data, error } = await window.supabase.from('locations').select('*').eq('id', id).single();
+      if (error) { console.error(error); return null; }
+      return data;
+    }
+
+    // ----------------- AR markers -----------------
+    let destEntity = null;
+    function placeDestination(lat, lon, name){
+      if (destEntity) scene.removeChild(destEntity);
       const arrow = document.createElement("a-entity");
-      arrow.setAttribute("gps-entity-place", `latitude: ${loc.lat}; longitude: ${loc.lon}`);
+      arrow.setAttribute("gps-entity-place", `latitude: ${lat}; longitude: ${lon}`);
+      // a simple built-in arrow model; you can swap for your own GLTF
       arrow.setAttribute("gltf-model", "https://cdn.aframe.io/test-models/models/arrow/arrow.gltf");
       arrow.setAttribute("scale", "5 5 5");
       arrow.setAttribute("look-at", "[gps-camera]");
+      arrow.setAttribute("animation__pulse", "property: scale; to: 6 6 6; dir: alternate; dur: 800; loop: true");
+      arrow.setAttribute("text", `value:${name}; align:center; color:#fff; side:double; yOffset:2`);
       scene.appendChild(arrow);
-    });
-
-    // Distance calculator (Haversine)
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371e3; // meters
-      const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
-      const Δφ = (lat2-lat1) * Math.PI/180;
-      const Δλ = (lon2-lon1) * Math.PI/180;
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
+      destEntity = arrow;
     }
 
-    // Update HUD
-    function updateHUD() {
-      if (userPos.lat === null) return;
+    function clearChevrons(){
+      routeChevrons.forEach(e=>scene.removeChild(e));
+      routeChevrons = [];
+    }
+    function addChevron(lat, lon){
+      const c = document.createElement("a-entity");
+      c.setAttribute("gps-entity-place", `latitude:${lat}; longitude:${lon}`);
+      c.setAttribute("geometry", "primitive: cone; height: 2; radiusBottom: 0.8; radiusTop: 0.1");
+      c.setAttribute("material", "color: #4caf50; opacity: 0.9");
+      c.setAttribute("rotation", "-90 0 0");
+      c.setAttribute("scale", "1 1 1");
+      scene.appendChild(c);
+      routeChevrons.push(c);
+    }
 
-      const target = route[currentIndex];
-      const dist = getDistance(userPos.lat, userPos.lon, target.lat, target.lon);
-
-      document.getElementById("distance").textContent = dist.toFixed(1);
-      document.getElementById("turn").textContent = target.turn;
-      document.getElementById("street").textContent = target.name;
-
-      // Switch to next waypoint if close enough
-      if (dist < 10 && currentIndex < route.length-1) {
-        currentIndex++;
+    // ----------------- OSRM routing (optional) -----------------
+    async function drawRouteFromOSRM(start, end, profile='foot'){ // profile: foot, bike, car
+      try{
+        const url = `https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('OSRM error');
+        const json = await res.json();
+        const coords = json.routes?.[0]?.geometry?.coordinates || [];
+        clearChevrons();
+        // Downsample for fewer entities
+        for (let i=0; i<coords.length; i+=10){
+          const [lon, lat] = coords[i];
+          addChevron(lat, lon);
+        }
+        const sec = Math.round(json.routes?.[0]?.duration || 0);
+        const eta = new Date(Date.now() + sec*1000);
+        document.getElementById('eta').textContent = fmtClock(eta);
+        document.getElementById('duration').textContent = Math.round(sec/60) + " min";
+      }catch(e){
+        console.warn('OSRM unavailable, falling back to straight-line ETA.', e);
+        clearChevrons(); // no route, we just show destination arrow
       }
-
-      // Mock ETA/duration (you can replace with real API like OSRM or Google Maps)
-      document.getElementById("eta").textContent = new Date(Date.now() + dist*100).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-      document.getElementById("duration").textContent = Math.ceil(dist/80) + " min"; // ~80m/min walking
     }
 
-    // GPS tracking
-    navigator.geolocation.watchPosition(pos => {
-      userPos.lat = pos.coords.latitude;
-      userPos.lon = pos.coords.longitude;
-      updateHUD();
-    }, err => console.error(err), { enableHighAccuracy:true });
+    // ----------------- HUD updates -----------------
+    function updateHUD(){
+      if (!target || user.lat==null) return;
+      const d = haversine(user.lat, user.lon, target.latitude, target.longitude);
+      document.getElementById('dist').textContent = d.toFixed(1);
 
-    // Clock updater
-    setInterval(() => {
-      const now = new Date();
-      document.getElementById("clock").textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    }, 1000);
+      // Straight-line ETA fallback (~1.2 m/s walking)
+      const secs = d / 1.2;
+      const eta = new Date(Date.now() + secs*1000);
+      document.getElementById('eta').textContent = fmtClock(eta);
+      document.getElementById('duration').textContent = Math.max(1, Math.round(secs/60)) + " min";
+
+      // Simple turn hint using compass vs bearing to target
+      if (user.heading!=null){
+        const brg = bearing(user.lat, user.lon, target.latitude, target.longitude);
+        let delta = (brg - user.heading + 540) % 360 - 180; // -180..180
+        let hint = Math.abs(delta) < 15 ? "On course" : (delta > 0 ? "Turn right" : "Turn left");
+        document.getElementById('hint').textContent = hint;
+      }
+      // When very close, mark as arrived
+      if (d < 8){
+        document.getElementById('hint').textContent = "Arrived";
+      }
+    }
+
+    // ----------------- bootstrap -----------------
+    (async function init(){
+      // if a specific id= is passed, use that; otherwise show chooser
+      const id = qs.get('id');
+      if (id){
+        target = await getLocationById(id);
+      } else {
+        const list = await getAllLocations();
+        const sel = document.getElementById('targetSel');
+        const chooser = document.getElementById('chooser');
+        list.forEach(l=>{
+          const opt = document.createElement('option');
+          opt.value = l.id; opt.textContent = l.name;
+          sel.appendChild(opt);
+        });
+        chooser.style.display = 'block';
+        document.getElementById('goBtn').onclick = async ()=>{
+          target = await getLocationById(sel.value);
+          chooser.style.display = 'none';
+          afterTargetChosen();
+        };
+      }
+      if (target){ afterTargetChosen(); }
+      // ask for compass right away (iOS needs tap)
+      // user can tap "Enable Compass" if this auto fails
+      setTimeout(enableCompass, 500);
+    })();
+
+    async function afterTargetChosen(){
+      placeDestination(target.latitude, target.longitude, target.name || 'Destination');
+      // Try to draw a route (uses OSRM public server; remove if you don’t want external API calls)
+      const start = {lat: user.lat ?? target.latitude, lon: user.lon ?? target.longitude};
+      await drawRouteFromOSRM(start, {lat: target.latitude, lon: target.longitude}, 'foot');
+
+      // Show destination name in HUD
+      document.getElementById('street').textContent = target.name || '—';
+    }
   </script>
 </body>
 </html>
