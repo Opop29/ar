@@ -1,187 +1,434 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Indoor AR Navigation (Floating Pen Demo)</title>
-  <style>
-    body {margin:0; font-family:sans-serif; background:#000; color:#fff;}
-    header {padding:10px; background:#111; text-align:center;}
-    video {width:100%; height:60vh; object-fit:cover; background:#000;}
-    .overlay {
-      position:absolute; inset:0;
-      display:flex; justify-content:center; align-items:center;
-      pointer-events:none;
-    }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>AR-style Floating Arrow (no ARCore)</title>
+<style>
+  :root{
+    --bg:#081021;
+    --card:#0e1724;
+    --accent:#1ed760;
+    --muted:#9aa9c7;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;}
+  body{background:linear-gradient(180deg,var(--bg) 0%, #0b1630 100%); color:#e6f0ff; display:flex; align-items:center; justify-content:center;}
+  .app {
+    width:100%;
+    max-width:620px;
+    margin:20px;
+    border-radius:16px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+    padding:16px;
+    box-sizing:border-box;
+  }
 
-    /* Floating glowing pen */
-    .arrow {
-      position:relative;
-      width: 14px;
-      height: 120px;
-      background: linear-gradient(to bottom, #00ffea, #0066ff);
-      border-radius: 8px;
-      box-shadow: 0 0 20px #00ffee, 0 0 40px #00aaff;
-      animation: float 2s ease-in-out infinite;
-      transform-origin: center bottom;
-    }
-    /* pointy glowing tip */
-    .arrow::after {
-      content: "";
-      position: absolute;
-      top: -20px; left: 50%;
-      transform: translateX(-50%);
-      width: 0; height: 0;
-      border-left: 10px solid transparent;
-      border-right: 10px solid transparent;
-      border-bottom: 20px solid #00ffee;
-      filter: drop-shadow(0 0 10px #00ffee);
-    }
-    @keyframes float {
-      0%   { transform: translateY(0) scale(1); }
-      50%  { transform: translateY(-10px) scale(1.05); }
-      100% { transform: translateY(0) scale(1); }
-    }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px;}
+  h1 { font-size:16px; margin:0; }
+  .controls { display:flex; gap:8px; align-items:center; }
 
-    .controls {padding:15px; background:#111;}
-    select, button {
-      padding:10px; font-size:16px; margin:5px;
-      border-radius:8px; border:none;
-    }
-    select {width:150px;}
-    button {background:#00bfff; color:#fff; cursor:pointer;}
-    .status {margin-top:10px; font-size:14px; color:#ccc;}
-  </style>
+  button { background:#142030; color:var(--accent); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:10px; font-weight:600; }
+  button.secondary { background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.03); }
+
+  .viewport {
+    height:60vh;
+    min-height:420px;
+    border-radius:12px;
+    overflow:hidden;
+    position:relative;
+    background:
+      radial-gradient(ellipse at center, rgba(255,255,255,0.02), transparent 40%),
+      url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="%230b1220"/></svg>') center/cover no-repeat;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:1px solid rgba(255,255,255,0.02);
+  }
+
+  /* HUD overlay (mock camera) */
+  .hud {
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+  }
+
+  /* Floating arrow container (3D illusion) */
+  .arrow-wrap {
+    position:absolute;
+    left:50%;
+    top:45%;
+    transform:translate(-50%,-50%);
+    will-change:transform;
+    pointer-events:auto;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    flex-direction:column;
+    text-align:center;
+  }
+
+  /* subtle bobbing */
+  @keyframes bob {
+    0% { transform: translate(-50%,-52%) translateY(-6px); }
+    50% { transform: translate(-50%,-48%) translateY(6px); }
+    100% { transform: translate(-50%,-52%) translateY(-6px); }
+  }
+  .arrow-wrap .bob {
+    animation: bob 2.2s ease-in-out infinite;
+  }
+
+  /* arrow itself (SVG) */
+  .arrow {
+    width:96px;
+    height:96px;
+    filter:drop-shadow(0 10px 22px rgba(0,0,0,0.6));
+    transform-origin:center center;
+  }
+  .distance {
+    font-weight:700;
+    font-size:18px;
+    color:var(--accent);
+    margin-top:8px;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+  }
+  .hint {
+    color:var(--muted);
+    font-size:13px;
+    margin-top:6px;
+  }
+
+  .status {
+    margin-top:12px;
+    font-size:13px;
+    color:var(--muted);
+    display:flex;
+    gap:12px;
+    align-items:center;
+  }
+
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); display:inline-block; box-shadow:0 6px 18px rgba(30,215,96,0.14); }
+  footer { margin-top:12px; font-size:12px; color:#9fb3d7; display:flex; gap:8px; justify-content:space-between; align-items:center; }
+
+  .small { font-size:12px; color:var(--muted); }
+  input[type="number"] { width:120px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); background:transparent; color:inherit; }
+  label { font-size:12px; color:var(--muted); margin-right:6px; }
+  .row { display:flex; gap:8px; align-items:center; }
+</style>
 </head>
 <body>
-  <header>
-    <h1>Indoor AR Navigation (Floating Pen)</h1>
-  </header>
+  <div class="app">
+    <header>
+      <h1>AR Arrow (no ARCore) — Floating HUD</h1>
+      <div class="controls">
+        <button id="btnCenter">Center on me</button>
+        <button id="btnPerm" class="secondary">Enable Sensors</button>
+      </div>
+    </header>
 
-  <div style="position:relative">
-    <video id="video" autoplay playsinline muted></video>
-    <div class="overlay"><div id="arrow" class="arrow"></div></div>
+    <div class="row" style="gap:12px; margin-bottom:10px;">
+      <div style="display:flex; gap:8px; align-items:center;">
+        <label>Target lat</label><input id="targetLat" type="number" step="0.000001" value="37.7749" />
+        <label>lon</label><input id="targetLon" type="number" step="0.000001" value="-122.4194" />
+        <label>alt (m)</label><input id="targetAlt" type="number" step="0.1" value="0" />
+      </div>
+      <div style="margin-left:auto" class="small">Tip: set target coords → press "Center on me" → Allow Permissions</div>
+    </div>
+
+    <div class="viewport" id="viewport">
+      <div class="hud">
+        <div class="arrow-wrap" id="arrowWrap">
+          <div class="bob" id="arrowBob">
+            <!-- SVG arrow pointing up (+Y). We'll rotate it via JS. -->
+            <svg class="arrow" viewBox="0 0 100 100" id="arrowSvg" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="g" x1="0" x2="1">
+                  <stop offset="0%" stop-color="#63f2b2"/>
+                  <stop offset="100%" stop-color="#0bb37f"/>
+                </linearGradient>
+              </defs>
+              <g transform="translate(50,50)">
+                <path d="M0,-40 L12,-4 L5,-4 L5,36 L-5,36 L-5,-4 L-12,-4 Z" fill="url(#g)" stroke="rgba(0,0,0,0.3)" stroke-width="1"/>
+                <circle r="12" cx="0" cy="20" fill="rgba(0,0,0,0.15)"/>
+              </g>
+            </svg>
+          </div>
+          <div class="distance" id="distanceLabel">— m</div>
+          <div class="hint" id="turnHint">Waiting for sensors...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status" id="status">
+      <div><span class="dot" id="dot"></span></div>
+      <div id="statText">Idle</div>
+      <div style="margin-left:auto" class="small">Works best on mobile over HTTPS. iOS: allow Motion & Orientation and Location.</div>
+    </div>
+
+    <footer>
+      <div class="small">Built without ARCore — heading + geolocation based.</div>
+      <div class="small">Accuracy depends on device sensors.</div>
+    </footer>
   </div>
 
-  <div class="controls">
-    <label>Current Location: </label>
-    <select id="current">
-      <option value="Entrance">Entrance</option>
-      <option value="Dining">Dining</option>
-      <option value="Room1">Room 1</option>
-      <option value="Room2">Room 2</option>
-      <option value="CR">CR</option>
-    </select><br/>
+<script>
+/*
+  Single-file demo:
+  - Uses Geolocation to get user position.
+  - Uses DeviceOrientation to get compass heading (tries multiple vendors).
+  - Computes bearing to target and rotates the arrow accordingly.
+  - Smooths heading & distance to reduce jitter.
+  - Limitations: no SLAM / plane detection; compass may be noisy or require calibration.
+*/
 
-    <label>Destination: </label>
-    <select id="destination">
-      <option value="CR">CR</option>
-      <option value="Room1">Room 1</option>
-      <option value="Room2">Room 2</option>
-      <option value="Dining">Dining</option>
-      <option value="Entrance">Entrance</option>
-    </select><br/>
+const targetLatInput = document.getElementById('targetLat');
+const targetLonInput = document.getElementById('targetLon');
+const targetAltInput = document.getElementById('targetAlt');
 
-    <button id="startBtn">Start Navigation</button>
-    <button id="nextBtn">Next Step</button>
-    <div class="status" id="status">Choose a start and destination.</div>
-  </div>
+const btnCenter = document.getElementById('btnCenter');
+const btnPerm = document.getElementById('btnPerm');
+const arrowWrap = document.getElementById('arrowWrap');
+const arrowSvg = document.getElementById('arrowSvg');
+const distanceLabel = document.getElementById('distanceLabel');
+const turnHint = document.getElementById('turnHint');
+const statText = document.getElementById('statText');
+const dot = document.getElementById('dot');
 
-  <script>
-    // --- Camera background ---
-    const video = document.getElementById('video');
-    async function initCamera(){
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" }, audio:false });
-        video.srcObject = stream;
-      } catch(e){
-        console.warn("Camera error", e);
+let userPos = null;      // {lat,lon,alt}
+let userHeading = null;  // degrees, 0 = North
+let smoothHeading = null;
+let smoothBearing = null;
+let watchId = null;
+let lastUpdate = 0;
+
+const alphaFilter = 0.12; // smoothing factor (0..1) lower = smoother
+const distanceFilter = 0.15;
+
+function setStatus(text, ok=true){
+  statText.textContent = text;
+  dot.style.background = ok ? 'var(--accent)' : '#d95f5f';
+}
+
+// Bearing formula: forward azimuth from (lat1,lon1) to (lat2,lon2)
+function bearingBetween(lat1, lon1, lat2, lon2){
+  // convert to radians
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δλ = (lon2 - lon1) * Math.PI/180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  let θ = Math.atan2(y, x); // radians
+  let deg = (θ * 180/Math.PI + 360) % 360;
+  return deg;
+}
+
+// Haversine distance (meters)
+function distanceBetween(lat1, lon1, lat2, lon2){
+  const R = 6378137.0;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Normalize degrees to [-180,180)
+function normalize180(d){
+  let r = (d + 180) % 360 - 180;
+  if (r < -180) r += 360;
+  return r;
+}
+
+// Low-pass filter for circular angles (handles wraparound)
+function smoothAngle(prev, current, alpha=alphaFilter){
+  if (prev === null) return current;
+  // convert to complex numbers
+  const a = prev * Math.PI/180;
+  const b = current * Math.PI/180;
+  const x = (1-alpha) * Math.cos(a) + alpha * Math.cos(b);
+  const y = (1-alpha) * Math.sin(a) + alpha * Math.sin(b);
+  const ang = Math.atan2(y,x) * 180/Math.PI;
+  return (ang + 360) % 360;
+}
+
+// Update UI rotation etc.
+function updateHUD(){
+  if (!userPos || userHeading === null) {
+    turnHint.textContent = 'Waiting for sensors / location...';
+    setStatus('Waiting for data...', false);
+    return;
+  }
+  const tlat = parseFloat(targetLatInput.value);
+  const tlon = parseFloat(targetLonInput.value);
+
+  const bearing = bearingBetween(userPos.lat, userPos.lon, tlat, tlon); // 0..360 (to target)
+  const dist = distanceBetween(userPos.lat, userPos.lon, tlat, tlon);
+
+  // We want arrow to point toward the target relative to device heading.
+  // arrowAngle = bearing - userHeading
+  const rawRel = (bearing - userHeading + 360) % 360;
+
+  // Smooth both heading and bearing (so arrow doesn't jerk)
+  smoothBearing = smoothAngle(smoothBearing === null ? bearing : smoothBearing, bearing);
+  smoothHeading = smoothAngle(smoothHeading === null ? userHeading : smoothHeading, userHeading);
+  const rel = (smoothBearing - smoothHeading + 360) % 360;
+
+  // Convert to -180..180 for nicer rotation CSS
+  const rel180 = normalize180(rel);
+
+  // Apply rotation: SVG arrow initially points up (north). rotate by rel180 degrees.
+  arrowSvg.style.transform = `rotate(${rel180}deg) translateZ(0)`;
+
+  // Distance smoothing
+  const prev = parseFloat(distanceLabel.dataset.smoothed || '0');
+  const smoothedDistance = isNaN(prev) || prev === 0 ? dist : prev*(1-distanceFilter) + dist*distanceFilter;
+  distanceLabel.dataset.smoothed = smoothedDistance.toString();
+  distanceLabel.textContent = smoothedDistance >= 1000 ? (smoothedDistance/1000).toFixed(2) + ' km' : Math.round(smoothedDistance) + ' m';
+
+  // Hint text
+  let hint = '';
+  const absRel = Math.abs(rel180);
+  if (dist < 8) hint = 'You are at the target.';
+  else if (absRel < 12) hint = 'Go straight';
+  else if (rel180 > 0) hint = 'Turn right';
+  else hint = 'Turn left';
+
+  turnHint.textContent = hint;
+  setStatus(`Heading ${Math.round(userHeading)}° • Target ${Math.round(bearing)}° • ${Math.round(dist)} m`, true);
+}
+
+// Request permission for iOS DeviceOrientation
+async function requestMotionPermission(){
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const resp = await DeviceOrientationEvent.requestPermission();
+      if (resp === 'granted') {
+        startOrientation();
+        btnPerm.style.display = 'none';
+        setStatus('Orientation granted', true);
+      } else {
+        setStatus('Orientation denied', false);
       }
+    } catch (err) {
+      console.warn('perm error', err);
+      setStatus('Orientation permission error', false);
     }
-    initCamera();
+  } else {
+    // non-iOS, permission typically not needed
+    startOrientation();
+    btnPerm.style.display = 'none';
+  }
+}
 
-    // --- House Map (Graph)
-    const houseMap = {
-      Entrance: ["Dining"],
-      Dining: ["Entrance", "Room1", "Room2", "CR"],
-      Room1: ["Dining"],
-      Room2: ["Dining"],
-      CR: ["Dining"]
-    };
-
-    // Predefined arrow directions (fake AR for demo)
-    const arrowDirections = {
-      "Entrance->Dining": 0,
-      "Dining->Room1": -90,
-      "Dining->Room2": 90,
-      "Dining->CR": 180,
-      "Dining->Entrance": 180,
-      "Room1->Dining": 90,
-      "Room2->Dining": -90,
-      "CR->Dining": 0
-    };
-
-    // --- Navigation state
-    let currentRoom = "Entrance";
-    let path = [];
-    let stepIndex = 0;
-
-    const arrow = document.getElementById('arrow');
-    const status = document.getElementById('status');
-
-    function findPath(start, dest){
-      // BFS pathfinding
-      const queue = [[start]];
-      const visited = new Set([start]);
-      while(queue.length){
-        const path = queue.shift();
-        const node = path[path.length-1];
-        if(node === dest) return path;
-        for(const nei of houseMap[node]||[]){
-          if(!visited.has(nei)){
-            visited.add(nei);
-            queue.push([...path, nei]);
-          }
-        }
-      }
-      return null;
-    }
-
-    function updateArrow(){
-      if(stepIndex >= path.length-1){
-        status.textContent = `Arrived at ${path[path.length-1]} 🎉`;
-        arrow.style.display = "none";
+// Orientation handling: prefer absolute heading if available (webkitCompassHeading),
+// otherwise use alpha + screen orientation compensation.
+function startOrientation(){
+  function handle(event){
+    // event may have .webkitCompassHeading on iOS Safari (0..360, 0 = North)
+    let heading = null;
+    if (typeof event.webkitCompassHeading === 'number') {
+      heading = event.webkitCompassHeading; // iOS provides already-correct heading
+    } else if (event.absolute === true || event.absolute === undefined) {
+      // event.alpha is rotation around Z axis in degrees.
+      // Many implementations: alpha = 0 when device points to magnetic north (but this varies).
+      // We'll use a commonly used formula with screen orientation.
+      const alpha = event.alpha;
+      if (alpha === null) {
+        // no compass data
         return;
       }
-      const from = path[stepIndex];
-      const to = path[stepIndex+1];
-      const key = `${from}->${to}`;
-      const dir = arrowDirections[key] ?? 0;
-      arrow.style.transform = `rotate(${dir}deg)`;
-      arrow.style.display = "block";
-      status.textContent = `Go from ${from} → ${to}`;
+      // compensate for screen orientation
+      const screenOrientation = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+      // Convert: heading = alpha - screenOrientation
+      heading = (360 - alpha + screenOrientation) % 360;
+    } else {
+      // fallback
+      if (event.alpha != null) heading = (360 - event.alpha) % 360;
     }
 
-    document.getElementById('startBtn').addEventListener('click', ()=>{
-      const start = document.getElementById('current').value;
-      const dest = document.getElementById('destination').value;
-      currentRoom = start;
-      path = findPath(start, dest);
-      if(!path){
-        status.textContent = "No path found.";
-        return;
-      }
-      stepIndex = 0;
-      updateArrow();
-    });
+    if (heading !== null && !isNaN(heading)) {
+      userHeading = heading;
+      updateHUD();
+    }
+  }
 
-    document.getElementById('nextBtn').addEventListener('click', ()=>{
-      if(stepIndex < path.length-1){
-        stepIndex++;
-        currentRoom = path[stepIndex];
-        updateArrow();
-      }
-    });
-  </script>
+  window.addEventListener('deviceorientation', handle, true);
+  setStatus('Listening to device orientation...', true);
+}
+
+// Start geolocation watch
+function startLocation(){
+  if (!navigator.geolocation) {
+    setStatus('Geolocation not supported', false);
+    return;
+  }
+  // one-time getCurrentPosition then watchPosition for updates.
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      userPos = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude };
+      updateHUD();
+    },
+    (err) => { setStatus('Location denied: ' + err.message, false); },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 8000 }
+  );
+
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      userPos = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude };
+      updateHUD();
+    },
+    (err) => { console.warn('watch err', err); setStatus('Location watch error', false); },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+  );
+  setStatus('Watching location...', true);
+}
+
+btnPerm.addEventListener('click', ()=> {
+  requestMotionPermission();
+});
+
+btnCenter.addEventListener('click', ()=> {
+  // set target to current position (for testing), or center UI using current location
+  if (!userPos) {
+    setStatus('No user position yet — requesting location...', false);
+    startLocation();
+    return;
+  }
+  // copy user pos into target inputs
+  targetLatInput.value = userPos.lat.toFixed(6);
+  targetLonInput.value = userPos.lon.toFixed(6);
+  targetAltInput.value = userPos.alt || 0;
+  setStatus('Target set to current location (centered).', true);
+  updateHUD();
+});
+
+// Start sensors automatically where possible
+(function init(){
+  // If iOS, show permission button (user must tap)
+  const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (isiOS) {
+    btnPerm.style.display = 'inline-block';
+    setStatus('iOS detected: tap "Enable Sensors" to allow Motion & Orientation', false);
+  } else {
+    btnPerm.style.display = 'none';
+    // try to start orientation directly for non-iOS
+    startOrientation();
+  }
+  // start location immediately (user will be prompted)
+  startLocation();
+})();
+
+// small visual/pop hint if device can't provide heading
+setInterval(()=>{
+  const now = performance.now();
+  if (!userPos) setStatus('Waiting for location...', false);
+  else if (userHeading === null) setStatus('Waiting for orientation (compass)...', false);
+}, 2500);
+</script>
 </body>
 </html>
+
