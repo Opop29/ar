@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AR Navigation</title>
+  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-ar@1.8.2/dist/aframe-ar.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-gps-camera@1.7.0/dist/aframe-gps-camera.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-gps-entity-place@1.7.0/dist/aframe-gps-entity-place.min.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #backBtn {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      padding: 10px 15px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <button id="backBtn" onclick="window.location.href='home.html'">⬅ Back</button>
+
+  <a-scene
+    vr-mode-ui="enabled: false"
+    embedded
+    arjs="sourceType: webcam; debugUIEnabled: false;"
+  >
+    <!-- GPS Camera -->
+    <a-camera gps-camera rotation-reader></a-camera>
+  </a-scene>
+
+  <script>
+    // Load saved locations from localStorage
+    const locations = JSON.parse(localStorage.getItem("locations")) || [];
+
+    const scene = document.querySelector("a-scene");
+
+    locations.forEach(loc => {
+      const marker = document.createElement("a-entity");
+      marker.setAttribute("gps-entity-place", `latitude: ${loc.latitude}; longitude: ${loc.longitude}`);
+      marker.setAttribute("geometry", "primitive: sphere; radius: 3");
+      marker.setAttribute("material", "color: red; opacity: 0.7");
+      marker.setAttribute("look-at", "[gps-camera]");
+      marker.setAttribute("scale", "5 5 5");
+      marker.setAttribute("text", `value: ${loc.name}; align: center; color: #fff;`);
+      scene.appendChild(marker);
+    });
+  </script>
+</body>
+</html>
