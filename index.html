@@ -1,255 +1,29 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Simple AR-like GPS Compass (No ARCore)</title>
-  <style>
-    :root{
-      --bg:#0b0f14; --fg:#e8eef5; --muted:#9fb2c7; --card:#121821; --accent:#5dd4ff;
-    }
-    *{box-sizing:border-box}
-    body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial; color:var(--fg); background:var(--bg);}
-    .app{display:grid; grid-template-columns:1fr; min-height:100svh}
-    header{padding:16px 20px; border-bottom:1px solid #1f2a38; display:flex; align-items:center; justify-content:space-between}
-    header h1{font-size:18px; margin:0; letter-spacing:.3px}
+<style>
+  body {margin:0; font-family:sans-serif; background:#000; color:#fff;}
+  header {padding:10px; background:#111; text-align:center;}
+  video {width:100%; height:60vh; object-fit:cover; background:#000;}
+  .overlay {position:absolute; inset:0; display:flex; justify-content:center; align-items:center; pointer-events:none;}
+  
+  /* Floating glowing pen instead of flat arrow */
+  .arrow {
+    width: 12px;
+    height: 120px;
+    background: linear-gradient(to bottom, #00ffea, #0066ff);
+    border-radius: 6px;
+    box-shadow: 0 0 15px #00ffee, 0 0 30px #00aaff;
+    animation: float 2s ease-in-out infinite;
+    transform-origin: center bottom;
+  }
 
-    .wrap{display:grid; gap:12px; padding:16px}
-    .card{background:var(--card); border:1px solid #1f2a38; border-radius:16px; padding:14px}
-    .row{display:flex; gap:10px; flex-wrap:wrap}
-    label{font-size:12px; color:var(--muted); display:block; margin-bottom:6px}
-    input{background:#0e141c; border:1px solid #243246; color:var(--fg); padding:10px 12px; border-radius:12px; width:100%}
-    button{appearance:none; border:0; padding:12px 14px; border-radius:12px; background:linear-gradient(180deg,#2a78ff,#0066ff); color:white; font-weight:600; cursor:pointer}
-    button.secondary{background:#17202c; border:1px solid #2a3a50}
+  @keyframes float {
+    0%   { transform: translateY(0) scale(1); }
+    50%  { transform: translateY(-10px) scale(1.05); }
+    100% { transform: translateY(0) scale(1); }
+  }
 
-    .panel{display:grid; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr))}
-    .stat{background:#0f1520; border:1px solid #223047; border-radius:14px; padding:12px}
-    .stat .k{font-size:11px; color:var(--muted)}
-    .stat .v{font:600 18px/1.2 ui-sans-serif,system-ui; margin-top:4px}
-
-    .viewer{position:relative; border-radius:18px; overflow:hidden; background:#000}
-    video{width:100%; height:min(55svh,60vh); object-fit:cover; display:block; background:#000}
-
-    .overlay{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none}
-    .arrow{width:0; height:0; border-left:24px solid transparent; border-right:24px solid transparent; border-bottom:60px solid var(--accent); filter:drop-shadow(0 8px 18px rgba(93,212,255,.45)); transition:transform .08s linear}
-    .target{position:absolute; bottom:12px; right:12px; font-size:12px; color:#cfe9ff; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:10px; border:1px solid rgba(255,255,255,.12)}
-
-    .note{font-size:12px; color:var(--muted)}
-
-    @media (min-width:900px){
-      .wrap{grid-template-columns:1.1fr .9fr; align-items:start}
-      .viewer{grid-row:1 / span 3}
-    }
-  </style>
-</head>
-<body>
-  <div class="app">
-    <header>
-      <h1>Simple AR-like GPS Compass (HTML + JS)</h1>
-      <div class="row">
-        <button id="btnStart">Start Sensors</button>
-        <button id="btnCamera" class="secondary">Toggle Camera</button>
-      </div>
-    </header>
-
-    <div class="wrap">
-      <section class="card viewer">
-        <video id="video" playsinline muted></video>
-        <div class="overlay">
-          <div id="arrow" class="arrow" title="Direction arrow"></div>
-          <div id="targetLbl" class="target">Target: <span id="tCoords">14.5833, 120.9799</span></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="row">
-          <div style="flex:1 1 160px">
-            <label for="lat">Destination Latitude</label>
-            <input id="lat" type="number" step="any" value="14.5833"> <!-- sample: Intramuros, Manila approx -->
-          </div>
-          <div style="flex:1 1 160px">
-            <label for="lon">Destination Longitude</label>
-            <input id="lon" type="number" step="any" value="120.9799">
-          </div>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <button id="btnSet">Set Destination</button>
-          <button id="btnHere" class="secondary" title="Use your current spot as the destination (for testing)">Set Dest = Here</button>
-        </div>
-        <p class="note" style="margin-top:10px">
-          Works best on a real phone over <strong>HTTPS</strong>. Give the page access to <em>Location</em>, <em>Motion & Orientation</em>, and optionally <em>Camera</em>. On iOS, you may be prompted twice (once for motion, once for location).
-        </p>
-      </section>
-
-      <section class="card panel">
-        <div class="stat"><div class="k">Heading (° from N)</div><div class="v" id="heading">–</div></div>
-        <div class="stat"><div class="k">Bearing to Target (°)</div><div class="v" id="bearing">–</div></div>
-        <div class="stat"><div class="k">Relative Direction (°)</div><div class="v" id="relative">–</div></div>
-        <div class="stat"><div class="k">Distance</div><div class="v" id="distance">–</div></div>
-        <div class="stat"><div class="k">GPS Accuracy</div><div class="v" id="acc">–</div></div>
-        <div class="stat"><div class="k">Coords (You)</div><div class="v" id="me">–</div></div>
-      </section>
-
-      <section class="card">
-        <details>
-          <summary>Tips & Notes</summary>
-          <ul>
-            <li>Arrow rotates in real time using <code>deviceorientation</code> or <code>webkitCompassHeading</code> (iOS) + GPS bearing.</li>
-            <li>Distance uses the Haversine formula. Values are smoothed to reduce jitter.</li>
-            <li>On iOS 13+, you must call <code>DeviceOrientationEvent.requestPermission()</code> from a user gesture.</li>
-            <li>Compass accuracy varies; stay away from metal objects and recalibrate by moving your phone in a figure‑8.</li>
-          </ul>
-        </details>
-      </section>
-    </div>
-  </div>
-
-  <script>
-    // ===== Utilities
-    const toRad = deg => deg * Math.PI / 180;
-    const toDeg = rad => rad * 180 / Math.PI;
-    const clamp360 = x => (x % 360 + 360) % 360;
-
-    function haversine(lat1, lon1, lat2, lon2){
-      const R = 6371000; // meters
-      const dLat = toRad(lat2-lat1);
-      const dLon = toRad(lon2-lon1);
-      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R*c;
-    }
-
-    function bearingBetween(lat1, lon1, lat2, lon2){
-      const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lon2 - lon1);
-      const y = Math.sin(Δλ) * Math.cos(φ2);
-      const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-      return clamp360(toDeg(Math.atan2(y, x)));
-    }
-
-    // Simple low-pass filter
-    function smoother(alpha){
-      let v = null; return x => { v = (v==null) ? x : (v + alpha*(x - v)); return v; };
-    }
-
-    // ===== State
-    let dest = { lat: parseFloat(document.getElementById('lat').value), lon: parseFloat(document.getElementById('lon').value) };
-    let me = { lat: null, lon: null, acc: null };
-    let heading = null; // degrees from North (0..360)
-
-    const smoothHeading = smoother(0.25);
-    const smoothBearing = smoother(0.35);
-
-    // ===== UI refs
-    const elArrow = document.getElementById('arrow');
-    const elHeading = document.getElementById('heading');
-    const elBearing = document.getElementById('bearing');
-    const elRelative = document.getElementById('relative');
-    const elDistance = document.getElementById('distance');
-    const elAcc = document.getElementById('acc');
-    const elMe = document.getElementById('me');
-    const elLat = document.getElementById('lat');
-    const elLon = document.getElementById('lon');
-    const elTCoords = document.getElementById('tCoords');
-    const video = document.getElementById('video');
-
-    // ===== Destination controls
-    function updateTargetLabel(){
-      elTCoords.textContent = `${dest.lat.toFixed(5)}, ${dest.lon.toFixed(5)}`;
-    }
-    updateTargetLabel();
-
-    document.getElementById('btnSet').addEventListener('click', ()=>{
-      dest.lat = parseFloat(elLat.value); dest.lon = parseFloat(elLon.value);
-      updateTargetLabel();
-      computeAndRender();
-    });
-
-    document.getElementById('btnHere').addEventListener('click', ()=>{
-      if(me.lat==null) return; dest.lat = me.lat; dest.lon = me.lon; elLat.value = dest.lat; elLon.value = dest.lon; updateTargetLabel(); computeAndRender();
-    });
-
-    // ===== Permissions + Sensors
-    async function startSensors(){
-      try{
-        // iOS 13+ requires explicit permission
-        if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-          const perm = await DeviceOrientationEvent.requestPermission();
-          if(perm !== 'granted') console.warn('Motion permission not granted.');
-        }
-      }catch(e){ console.warn('Orientation permission error', e); }
-
-      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      window.addEventListener('deviceorientation', handleOrientation, true);
-
-      if('geolocation' in navigator){
-        navigator.geolocation.watchPosition(pos => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          me.lat = latitude; me.lon = longitude; me.acc = accuracy;
-          computeAndRender();
-        }, err => {
-          console.warn('GPS error', err);
-        }, { enableHighAccuracy:true, maximumAge:1000, timeout:10000 });
-      } else {
-        alert('Geolocation not supported in this browser.');
-      }
-    }
-
-    function handleOrientation(ev){
-      let hdg = null;
-      // iOS Safari provides webkitCompassHeading (0..360, clockwise from North)
-      if(typeof ev.webkitCompassHeading === 'number'){
-        hdg = ev.webkitCompassHeading;
-      } else if(ev.absolute === true && typeof ev.alpha === 'number'){
-        // Some Android devices with absolute orientation give alpha as degrees from z-axis relative to magnetic north
-        // Convert alpha (0..360) to heading from North
-        // On many devices, heading ≈ 360 - alpha
-        hdg = 360 - ev.alpha;
-      } else if(typeof ev.alpha === 'number'){
-        // Fallback (may be relative, less accurate)
-        hdg = 360 - ev.alpha;
-      }
-      if(hdg!=null){
-        heading = clamp360(smoothHeading(hdg));
-        computeAndRender();
-      }
-    }
-
-    // ===== Camera toggle
-    let stream = null;
-    async function toggleCamera(){
-      try{
-        if(stream){
-          stream.getTracks().forEach(t=>t.stop());
-          stream = null; video.srcObject = null; return;
-        }
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        video.srcObject = stream; await video.play();
-      }catch(e){ console.warn('Camera error', e); alert('Could not start camera: ' + e.message); }
-    }
-
-    document.getElementById('btnStart').addEventListener('click', startSensors);
-    document.getElementById('btnCamera').addEventListener('click', toggleCamera);
-
-    // ===== Core compute & render
-    function computeAndRender(){
-      if(me.lat==null || me.lon==null || dest.lat==null || dest.lon==null) return;
-      const brg = smoothBearing(bearingBetween(me.lat, me.lon, dest.lat, dest.lon));
-      const dist = haversine(me.lat, me.lon, dest.lat, dest.lon);
-
-      let rel = 0;
-      if(heading!=null){
-        rel = clamp360(brg - heading);
-        elArrow.style.transform = `rotate(${rel}deg)`;
-      }
-
-      // UI
-      elBearing.textContent = brg.toFixed(1);
-      elHeading.textContent = heading==null ? '–' : heading.toFixed(1);
-      elRelative.textContent = heading==null ? '–' : rel.toFixed(1);
-      elDistance.textContent = (dist>=1000? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m');
-      elAcc.textContent = me.acc? Math.round(me.acc)+' m' : '–';
-      elMe.textContent = me.lat && me.lon ? `${me.lat.toFixed(5)}, ${me.lon.toFixed(5)}` : '–';
-    }
-  </script>
-</body>
-</html>
+  .controls {padding:15px; background:#111;}
+  select, button {padding:10px; font-size:16px; margin:5px; border-radius:8px; border:none;}
+  select {width:150px;}
+  button {background:#00bfff; color:#fff; cursor:pointer;}
+  .status {margin-top:10px; font-size:14px; color:#ccc;}
+</style>
