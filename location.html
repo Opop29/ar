@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f9;
+            margin: 20px;
+        }
+        h2 {
+            text-align: center;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
+        }
+        input, button {
+            margin: 5px 0;
+            padding: 10px;
+            width: 100%;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .location-card {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 6px;
+        }
+        .actions button {
+            margin: 5px;
+            width: auto;
+            background: #333;
+        }
+        #map {
+            height: 400px;
+            margin-top: 10px;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>GPS Location Tracker</h2>
+        <p><strong>Your Current Location:</strong></p>
+        <p id="userLocation">Fetching...</p>
+
+        <h3>Add / Update Location</h3>
+        <input type="text" id="locName" placeholder="Location Name">
+        <input type="text" id="latitude" placeholder="Latitude">
+        <input type="text" id="longitude" placeholder="Longitude">
+        <button onclick="saveLocation()">Save Location</button>
+
+        <h3>Select Location on Map</h3>
+        <p>Click on the map to set latitude and longitude automatically.</p>
+        <div id="map"></div>
+
+        <h3>Saved Locations</h3>
+        <div id="locationsList"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        let userCoords = null;
+        let map, marker;
+
+        // Get user coordinates
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    userCoords = {lat: pos.coords.latitude, lon: pos.coords.longitude};
+                    document.getElementById('userLocation').innerText = 
+                        `Lat: ${userCoords.lat.toFixed(5)}, Lon: ${userCoords.lon.toFixed(5)}`;
+
+                    if (!map) {
+                        initMap(userCoords.lat, userCoords.lon);
+                    }
+                    displayLocations();
+                },
+                (err) => {
+                    document.getElementById('userLocation').innerText = "Location access denied.";
+                    initMap(7.9, 125.0); // Default center if denied (Mindanao, PH)
+                }
+            );
+        } else {
+            document.getElementById('userLocation').innerText = "Geolocation not supported.";
+            initMap(7.9, 125.0);
+        }
+
+        // Initialize map
+        function initMap(lat, lon) {
+            map = L.map('map').setView([lat, lon], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Show user marker
+            marker = L.marker([lat, lon]).addTo(map).bindPopup("You are here").openPopup();
+
+            // On map click
+            map.on('click', function(e) {
+                const { lat, lng } = e.latlng;
+                document.getElementById('latitude').value = lat.toFixed(6);
+                document.getElementById('longitude').value = lng.toFixed(6);
+
+                if (marker) {
+                    marker.setLatLng(e.latlng).setPopupContent("Selected Location").openPopup();
+                } else {
+                    marker = L.marker(e.latlng).addTo(map).bindPopup("Selected Location").openPopup();
+                }
+            });
+        }
+
+        // Save location to localStorage
+        function saveLocation() {
+            const name = document.getElementById('locName').value;
+            const lat = parseFloat(document.getElementById('latitude').value);
+            const lon = parseFloat(document.getElementById('longitude').value);
+
+            if (!name || isNaN(lat) || isNaN(lon)) {
+                alert("Please enter valid name and coordinates.");
+                return;
+            }
+
+            let locations = JSON.parse(localStorage.getItem("locations")) || [];
+
+            // Check if location name already exists (update if yes)
+            const index = locations.findIndex(l => l.name === name);
+            if (index !== -1) {
+                locations[index] = {name, lat, lon};
+            } else {
+                locations.push({name, lat, lon});
+            }
+
+            localStorage.setItem("locations", JSON.stringify(locations));
+            displayLocations();
+        }
+
+        // Delete location
+        function deleteLocation(name) {
+            let locations = JSON.parse(localStorage.getItem("locations")) || [];
+            locations = locations.filter(l => l.name !== name);
+            localStorage.setItem("locations", JSON.stringify(locations));
+            displayLocations();
+        }
+
+        // Calculate distance between two coordinates (Haversine formula)
+        function calcDistance(lat1, lon1, lat2, lon2) {
+            function toRad(value) {
+                return value * Math.PI / 180;
+            }
+
+            const R = 6371000; // Earth radius in meters
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; // in meters
+        }
+
+        // Display saved locations
+        function displayLocations() {
+            const listDiv = document.getElementById("locationsList");
+            listDiv.innerHTML = "";
+            let locations = JSON.parse(localStorage.getItem("locations")) || [];
+
+            locations.forEach(loc => {
+                let distanceText = "";
+                if (userCoords) {
+                    const dist = calcDistance(userCoords.lat, userCoords.lon, loc.lat, loc.lon);
+                    distanceText = `<br><strong>Distance:</strong> ${dist.toFixed(2)} meters`;
+                }
+                listDiv.innerHTML += `
+                    <div class="location-card">
+                        <strong>${loc.name}</strong><br>
+                        Lat: ${loc.lat}, Lon: ${loc.lon}
+                        ${distanceText}
+                        <div class="actions">
+                            <button onclick="deleteLocation('${loc.name}')">Delete</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // Show saved locations on load
+        displayLocations();
+    </script>
+</body>
+</html>
