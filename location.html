@@ -46,18 +46,24 @@
         .actions button {
             margin: 5px;
             width: auto;
-            background: #333;
         }
         #map {
             height: 400px;
             margin-top: 10px;
             border-radius: 6px;
         }
+        .back-btn {
+            background: #ff5722;
+        }
+        .back-btn:hover {
+            background: #e64a19;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>GPS Location Tracker</h2>
+        <button class="back-btn" onclick="goBack()">⬅ Back</button>
         <p><strong>Your Current Location:</strong></p>
         <p id="userLocation">Fetching...</p>
 
@@ -80,6 +86,11 @@
         let userCoords = null;
         let map, marker;
 
+        // Back button
+        function goBack() {
+            window.location.href = "home.html";
+        }
+
         // Get user coordinates
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
@@ -95,7 +106,7 @@
                 },
                 (err) => {
                     document.getElementById('userLocation').innerText = "Location access denied.";
-                    initMap(7.9, 125.0); // Default center if denied (Mindanao, PH)
+                    initMap(7.9, 125.0); // Default center if denied
                 }
             );
         } else {
@@ -160,20 +171,33 @@
             displayLocations();
         }
 
-        // Calculate distance between two coordinates (Haversine formula)
-        function calcDistance(lat1, lon1, lat2, lon2) {
-            function toRad(value) {
-                return value * Math.PI / 180;
-            }
+        // Update location (load into inputs + map)
+        function updateLocation(name) {
+            let locations = JSON.parse(localStorage.getItem("locations")) || [];
+            const loc = locations.find(l => l.name === name);
+            if (loc) {
+                document.getElementById('locName').value = loc.name;
+                document.getElementById('latitude').value = loc.lat;
+                document.getElementById('longitude').value = loc.lon;
 
-            const R = 6371000; // Earth radius in meters
+                if (marker) {
+                    marker.setLatLng([loc.lat, loc.lon]).setPopupContent("Editing: " + loc.name).openPopup();
+                    map.setView([loc.lat, loc.lon], 15);
+                }
+            }
+        }
+
+        // Calculate distance (Haversine formula)
+        function calcDistance(lat1, lon1, lat2, lon2) {
+            function toRad(value) { return value * Math.PI / 180; }
+            const R = 6371000; 
             const dLat = toRad(lat2 - lat1);
             const dLon = toRad(lon2 - lon1);
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c; // in meters
+            return R * c;
         }
 
         // Display saved locations
@@ -194,6 +218,7 @@
                         Lat: ${loc.lat}, Lon: ${loc.lon}
                         ${distanceText}
                         <div class="actions">
+                            <button onclick="updateLocation('${loc.name}')">Update</button>
                             <button onclick="deleteLocation('${loc.name}')">Delete</button>
                         </div>
                     </div>
