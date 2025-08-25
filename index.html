@@ -1,31 +1,55 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>Simple Floating AR Arrow</title>
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/aframe-ar@1.8.2/dist/aframe-ar.min.js"></script>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
     <style>
-      body { margin: 0; overflow: hidden; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+        header {
+            background: #333;
+            color: white;
+            padding: 20px;
+        }
+        h1 {
+            margin: 0;
+        }
+        main {
+            padding: 40px;
+        }
+        footer {
+            background: #333;
+            color: white;
+            padding: 10px;
+            position: fixed;
+            width: 100%;
+            bottom: 0;
+        }
+        a {
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
     </style>
-  </head>
-  <body>
-    <!-- AR.js scene: will request camera permission automatically -->
-    <a-scene
-      vr-mode-ui="enabled: false"
-      embedded
-      arjs="sourceType: webcam; debugUIEnabled: false;">
-      
-      <!-- Floating arrow always in front of the user -->
-      <a-entity position="0 0 -2">
-        <!-- Arrow head -->
-        <a-cone color="red" height="0.8" radius-bottom="0.3" position="0 0.5 0"></a-cone>
-        <!-- Arrow shaft -->
-        <a-cylinder color="red" height="1" radius="0.1" position="0 -0.2 0"></a-cylinder>
-      </a-entity>
-      
-      <!-- Static AR camera -->
-      <a-camera-static></a-camera-static>
-    </a-scene>
-  </body>
+</head>
+<body>
+    <header>
+        <h1>Welcome to My Home Page</h1>
+    </header>
+    <main>
+        <p>This is a simple HTML page called <strong>home.html</strong>.</p>
+        <p>Navigate to <a href="#">another page</a>.</p>
+    </main>
+    <footer>
+        <p>&copy; 2025 My Website</p>
+    </footer>
+</body>
 </html>
