@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Locations</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: black;
+    }
+    #camera {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .marker {
+      position: absolute;
+      background: rgba(0,200,255,0.85);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 8px;
+      transform: translate(-50%, -50%);
+      white-space: nowrap;
+    }
+    .top-bar {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 2;
+    }
+    .top-bar button {
+      padding: 10px 15px;
+      background: #ff5722;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Camera feed -->
+  <video id="camera" autoplay playsinline></video>
+
+  <!-- Overlay for AR pins -->
+  <div id="overlay"></div>
+
+  <div class="top-bar">
+    <button onclick="goBack()">⬅ Back</button>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    // Supabase init
+    const supabase = createClient(
+      "https://clywxultbpgqlqlorjjh.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    );
+
+    const video = document.getElementById("camera");
+    const overlay = document.getElementById("overlay");
+
+    // Open camera
+    async function openCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+      } catch (err) {
+        alert("Camera access denied: " + err.message);
+      }
+    }
+
+    // Haversine distance
+    function calcDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; // meters
+      const toRad = (x) => x * Math.PI / 180;
+      const φ1 = toRad(lat1), φ2 = toRad(lat2);
+      const Δφ = toRad(lat2-lat1);
+      const Δλ = toRad(lon2-lon1);
+
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // Show pins relative to user
+    async function loadPins(userLat, userLon) {
+      overlay.innerHTML = "";
+      const { data: locations } = await supabase.from("locations").select("*");
+
+      locations.forEach(loc => {
+        const dist = calcDistance(userLat, userLon, loc.latitude, loc.longitude);
+        // Simple projection: just place randomly on screen based on coords
+        const x = ((loc.longitude - userLon) * 100000) % window.innerWidth;
+        const y = ((loc.latitude - userLat) * 100000) % window.innerHeight;
+
+        const div = document.createElement("div");
+        div.className = "marker";
+        div.style.left = `${(window.innerWidth/2 + x) % window.innerWidth}px`;
+        div.style.top = `${(window.innerHeight/2 + y) % window.innerHeight}px`;
+        div.innerHTML = `${loc.name}<br><small>${dist.toFixed(1)} m</small>`;
+        overlay.appendChild(div);
+      });
+    }
+
+    // Get GPS & show pins
+    function trackLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          loadPins(lat, lon);
+        }, err => {
+          alert("GPS error: " + err.message);
+        });
+      } else {
+        alert("Geolocation not supported.");
+      }
+    }
+
+    // Back button
+    window.goBack = () => {
+      window.location.href = "tracker.html"; // change to your main file
+    };
+
+    openCamera();
+    trackLocation();
+  </script>
+</body>
+</html>
