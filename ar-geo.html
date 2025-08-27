@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Geo AR — Supabase Locations</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- A-Frame and AR.js (with GPS components) -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    html, body { margin:0; padding:0; background:#000; color:#fff; font-family: system-ui, Arial, sans-serif; }
+    #hud {
+      position: fixed; left: 0; right: 0; top: 0;
+      display: flex; gap: 8px; align-items: center; padding: 10px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.6), rgba(0,0,0,0));
+      z-index: 10; pointer-events: none;
+    }
+    #hud .pill {
+      pointer-events: auto;
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+      padding: 8px 12px; border-radius: 999px; backdrop-filter: blur(6px);
+      font-weight: 600;
+    }
+    #msg { margin-left: auto; opacity: .9; font-size: 14px; }
+    #listPanel {
+      position: fixed; bottom: 10px; left: 0; right: 0; z-index: 10;
+      display: flex; gap: 8px; overflow-x: auto; padding: 10px;
+    }
+    .card {
+      min-width: 180px; background: rgba(20,20,20,.75); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 12px; padding: 10px;
+    }
+    .card b { display:block; margin-bottom:4px; }
+    button.primary {
+      pointer-events: auto; border: 0; border-radius: 999px; padding: 8px 12px;
+      background: #36c57a; color:#092; font-weight: 700;
+    }
+    a { color: #aaf; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <button class="pill" onclick="goBack()">⬅ Back</button>
+    <div class="pill" id="status">Requesting camera + GPS…</div>
+    <div id="msg"></div>
+  </div>
+
+  <!-- Quick list of loaded locations -->
+  <div id="listPanel"></div>
+
+  <!-- AR Scene -->
+  <a-scene
+    vr-mode-ui="enabled: false"
+    renderer="antialias: true; alpha: true; physicallyCorrectLights: true"
+    embedded
+    arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best;"
+    device-orientation-permission-ui="enabled: false"
+  >
+    <!-- AR.js GPS camera follows real location -->
+    <a-entity id="camera" camera gps-camera rotation-reader></a-entity>
+
+    <!-- A soft directional light to make things readable -->
+    <a-entity light="type: directional; intensity: 0.9" position="0 10 0"></a-entity>
+    <a-entity light="type: ambient; intensity: 0.6"></a-entity>
+  </a-scene>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    // === Supabase init (reusing your project) ===
+    const supabase = createClient(
+      "https://clywxultbpgqlqlorjjh.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNseXd4dWx0YnBncWxxbG9yampoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjAzNzUsImV4cCI6MjA3MTY5NjM3NX0.nAAU2oT9-hy7tekZGsVwNMKzTzZSRCvJWjBEiba8F3U"
+    );
+
+    const statusEl = document.getElementById('status');
+    const msgEl = document.getElementById('msg');
+    const listPanel = document.getElementById('listPanel');
+    const scene = document.querySelector('a-scene');
+
+    // Back to your tracker page
+    window.goBack = () => (window.location.href = "home.html");
+
+    // Utility: distance meters between two lat/lon (Haversine)
+    function distanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2) ** 2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon/2) ** 2;
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    // Build an AR pin entity at a given GPS spot
+    function createPin(loc) {
+      // A billboarded “pin”: cylinder + cone + name text
+      const group = document.createElement('a-entity');
+      group.setAttribute('gps-entity-place', `latitude: ${loc.latitude}; longitude: ${loc.longitude};`);
+      group.setAttribute('look-at', '[gps-camera]'); // face the user
+
+      const mast = document.createElement('a-cylinder');
+      mast.setAttribute('radius', 0.05);
+      mast.setAttribute('height', 1.2);
+      mast.setAttribute('position', '0 0.6 0');
+
+      const tip = document.createElement('a-cone');
+      tip.setAttribute('radius-bottom', 0.2);
+      tip.setAttribute('radius-top', 0.001);
+      tip.setAttribute('height', 0.4);
+      tip.setAttribute('position', '0 1.4 0');
+
+      // Subtle materials to be visible in sunlight
+      mast.setAttribute('material', 'metalness: 0.2; roughness: 0.7; color: #3BA7FF');
+      tip.setAttribute('material', 'metalness: 0.1; roughness: 0.5; color: #FF3B7A');
+
+      const label = document.createElement('a-entity');
+      label.setAttribute('text', `value: ${loc.name}; align: center; width: 4; color: #ffffff;`);
+      label.setAttribute('position', '0 1.9 0');
+
+      // Touch to “ping” info
+      const hitArea = document.createElement('a-sphere');
+      hitArea.setAttribute('radius', 0.6);
+      hitArea.setAttribute('position', '0 1.2 0');
+      hitArea.setAttribute('material', 'opacity: 0; transparent: true;');
+
+      hitArea.addEventListener('click', () => {
+        msgEl.textContent = `📍 ${loc.name}`;
+        setTimeout(() => { if (msgEl.textContent.startsWith('📍')) msgEl.textContent = ''; }, 2500);
+      });
+
+      group.appendChild(mast);
+      group.appendChild(tip);
+      group.appendChild(label);
+      group.appendChild(hitArea);
+
+      // Optional subtle bounce animation to attract attention
+      group.setAttribute('animation', 'property: position; to: 0 0.1 0; dir: alternate; dur: 1300; loop: true; easing: easeInOutSine');
+
+      return group;
+    }
+
+    async function loadLocations() {
+      statusEl.textContent = 'Loading locations from Supabase…';
+      const { data, error } = await supabase.from('locations').select('*').order('id');
+      if (error) {
+        statusEl.textContent = 'Failed to load locations.';
+        console.error(error);
+        return [];
+      }
+      statusEl.textContent = `Loaded ${data.length} location(s).`;
+      return data;
+    }
+
+    // Populate quick list and allow tap-to-focus (centers user toward that pin by showing name)
+    function renderList(items) {
+      listPanel.innerHTML = '';
+      items.forEach(loc => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <b>${loc.name}</b>
+          <div>Lat: ${Number(loc.latitude).toFixed(6)}<br/>Lon: ${Number(loc.longitude).toFixed(6)}</div>
+          <div style="margin-top:8px"><button class="primary">Focus</button></div>
+        `;
+        card.querySelector('button').onclick = () => {
+          msgEl.textContent = `🧭 Face ${loc.name} in the real world.`;
+          setTimeout(() => { if (msgEl.textContent.startsWith('🧭')) msgEl.textContent = ''; }, 3000);
+        };
+        listPanel.appendChild(card);
+      });
+    }
+
+    // Track distance to nearest pin and show in HUD
+    function startDistanceTicker(locations) {
+      const cam = document.getElementById('camera');
+      let last = { lat: null, lon: null };
+
+      window.addEventListener('gps-camera-update-position', (e) => {
+        const { position } = e.detail;
+        if (!position || position.latitude == null) return;
+
+        const { latitude: lat, longitude: lon, accuracy } = position;
+        if (lat === last.lat && lon === last.lon) return;
+        last = { lat, lon };
+
+        if (locations.length) {
+          let best = { name: '', dist: Infinity };
+          for (const loc of locations) {
+            const d = distanceMeters(lat, lon, loc.latitude, loc.longitude);
+            if (d < best.dist) best = { name: loc.name, dist: d };
+          }
+          statusEl.textContent = `GPS ±${Math.round(accuracy || 10)} m · Nearest: ${best.name} — ${best.dist.toFixed(0)} m`;
+        } else {
+          statusEl.textContent = `GPS lock ±${Math.round(accuracy || 10)} m`;
+        }
+      });
+    }
+
+    // iOS requires a user gesture to start camera + motion permission
+    async function ensureIOSPermissions() {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (!isIOS) return;
+
+      // Ask motion permission (for orientation-based heading)
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try { await DeviceMotionEvent.requestPermission(); } catch { /* ignore */ }
+      }
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try { await DeviceOrientationEvent.requestPermission(); } catch { /* ignore */ }
+      }
+    }
+
+    // Boot
+    (async function init() {
+      // Small tap-gate for iOS to allow camera + sensors
+      document.body.addEventListener('click', async function once() {
+        document.body.removeEventListener('click', once);
+        await ensureIOSPermissions();
+      }, { once: true });
+
+      const locations = await loadLocations();
+
+      // Create AR pins
+      for (const loc of locations) {
+        const pin = createPin(loc);
+        scene.appendChild(pin);
+      }
+      renderList(locations);
+      startDistanceTicker(locations);
+
+      // Soft nudge text
+      msgEl.textContent = 'Move the phone to let GPS lock and watch pins align in the real world.';
+      setTimeout(() => { msgEl.textContent = ''; }, 4000);
+    })();
+  </script>
+
+  <!-- A-Frame helpers -->
+  <script>
+    // Face the camera (billboarding)
+    AFRAME.registerComponent('look-at', {
+      schema: { default: '[camera]' },
+      init: function () { this.target3D = null; },
+      tick: function () {
+        if (!this.target3D) {
+          const targetEl = document.querySelector(this.data);
+          if (!targetEl || !targetEl.object3D) return;
+          this.target3D = targetEl.object3D;
+        }
+        this.el.object3D.lookAt(this.target3D.getWorldPosition(new THREE.Vector3()));
+      }
+    });
+
+    // Rotation-reader: improves device heading handling
+    AFRAME.registerComponent('rotation-reader', {
+      tick: function () {
+        const rot = this.el.getAttribute('rotation');
+        this.el.sceneEl.emit('rotation', { rotation: rot });
+      }
+    });
+  </script>
+</body>
+</html>
