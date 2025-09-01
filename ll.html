@@ -27,9 +27,7 @@
       border-radius: 6px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    .actions button {
-      margin: 4px;
-    }
+    .actions button { margin: 4px; }
     #locationSelect {
       width: 100%;
       padding: 6px;
@@ -54,9 +52,10 @@
       border-radius: 6px;
     }
   </style>
+
   <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/aframe-ar@1.8.0/dist/aframe-ar.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar-nft.js"></script>
 </head>
 <body>
   <div id="map"></div>
@@ -75,7 +74,8 @@
     <a-scene
       embedded
       vr-mode-ui="enabled: false"
-      arjs="sourceType: webcam; debugUIEnabled: false;"
+      renderer="antialias: true; alpha: true"
+      arjs="sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
       id="arScene"
     >
       <a-camera gps-camera rotation-reader></a-camera>
@@ -85,7 +85,6 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/@supabase/supabase-js"></script>
   <script>
-    // Initialize map
     const map = L.map("map").setView([7.5, 125.0], 13);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap contributors"
@@ -95,12 +94,10 @@
     let userCoords = null;
     let arObjects = [];
 
-    // Supabase config
     const supabaseUrl = "https://clywxultbpgqlqlorjjh.supabase.co";
-    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNseXd4dWx0YnBncWxxbG9yampoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjAzNzUsImV4cCI6MjA3MTY5NjM3NX0.nAAU2oT9-hy7tekZGsVwNMKzTzZSRCvJWjBEiba8F3U";
+    const supabaseKey = "YOUR-KEY-HERE";
     const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-    // Distance calc
     function calcDistance(lat1, lon1, lat2, lon2) {
       function toRad(v) { return v * Math.PI / 180; }
       const R = 6371000;
@@ -109,17 +106,12 @@
       const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                 Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
                 Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // Display locations
     async function displayLocations() {
       const { data, error } = await supabase.from("locations").select("*");
-      if (error) {
-        console.error(error);
-        return;
-      }
+      if (error) { console.error(error); return; }
 
       const listDiv = document.getElementById("locationList");
       const select = document.getElementById("locationSelect");
@@ -128,7 +120,6 @@
       arObjects = [];
 
       data.forEach(loc => {
-        // Add sidebar
         let distanceText = "";
         if (userCoords) {
           const dist = calcDistance(userCoords.lat, userCoords.lon, loc.latitude, loc.longitude);
@@ -141,34 +132,26 @@
             ${distanceText}
             <div class="actions">
               <button onclick="viewLocation('${loc.name}', ${loc.latitude}, ${loc.longitude})">View</button>
-              <button onclick="editLocation(${loc.id}, '${loc.name}', ${loc.latitude}, ${loc.longitude})">Update</button>
-              <button onclick="deleteLocation(${loc.id})">Delete</button>
             </div>
           </div>
         `;
 
-        // Dropdown
         const option = document.createElement("option");
         option.value = JSON.stringify({lat: loc.latitude, lon: loc.longitude, name: loc.name});
         option.textContent = loc.name;
         select.appendChild(option);
 
-        // Marker on map
         L.marker([loc.latitude, loc.longitude]).addTo(map)
-          .bindPopup(`<b>${loc.name}</b><br>Lat: ${loc.latitude}, Lon: ${loc.longitude}`);
+          .bindPopup(`<b>${loc.name}</b>`);
 
-        // Save for AR
         arObjects.push(loc);
       });
     }
 
-    // Map actions
     function viewLocation(name, lat, lon) {
       map.setView([lat, lon], 16);
       L.popup().setLatLng([lat, lon]).setContent(`<b>${name}</b>`).openOn(map);
     }
-    function editLocation(id, name, lat, lon) { alert(`Edit ${name}`); }
-    function deleteLocation(id) { alert(`Delete ID: ${id}`); }
 
     document.getElementById("locationSelect").addEventListener("change", (e) => {
       if (e.target.value) {
@@ -177,7 +160,6 @@
       }
     });
 
-    // Geolocation
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(pos => {
         const { latitude, longitude } = pos.coords;
@@ -192,33 +174,37 @@
       }, err => console.error(err), { enableHighAccuracy: true });
     }
 
-    // Open AR
     function openAR() {
       document.getElementById("ar-container").style.display = "block";
       const scene = document.getElementById("arScene");
 
-      // Remove old objects
-      scene.querySelectorAll("a-box").forEach(el => el.remove());
+      scene.querySelectorAll("a-box, a-text").forEach(el => el.remove());
 
-      // Add cubes for each location
       arObjects.forEach(loc => {
         const box = document.createElement("a-box");
         box.setAttribute("gps-entity-place", `latitude: ${loc.latitude}; longitude: ${loc.longitude}`);
-        box.setAttribute("color", "tomato");
-        box.setAttribute("depth", "2");
-        box.setAttribute("height", "2");
-        box.setAttribute("width", "2");
-        box.setAttribute("animation", "property: rotation; to: 0 360 0; loop: true; dur: 6000");
+        box.setAttribute("color", "orange");
+        box.setAttribute("depth", "3");
+        box.setAttribute("height", "3");
+        box.setAttribute("width", "3");
+        box.setAttribute("animation", "property: rotation; to: 0 360 0; loop: true; dur: 8000");
         scene.appendChild(box);
+
+        const label = document.createElement("a-text");
+        label.setAttribute("value", loc.name);
+        label.setAttribute("gps-entity-place", `latitude: ${loc.latitude}; longitude: ${loc.longitude}`);
+        label.setAttribute("align", "center");
+        label.setAttribute("color", "white");
+        label.setAttribute("scale", "5 5 5");
+        label.setAttribute("position", "0 4 0");
+        scene.appendChild(label);
       });
     }
 
-    // Close AR
     function closeAR() {
       document.getElementById("ar-container").style.display = "none";
     }
 
-    // Initial load
     displayLocations();
   </script>
 </body>
