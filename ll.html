@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AR Cube Demo</title>
+  <title>AR Cube Demo Fixed</title>
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <!-- AR.js (Markerless / GPS optional) -->
+  <!-- AR.js -->
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
   <style>
     body, html {
@@ -19,15 +19,17 @@
 </head>
 <body>
 
-  <!-- AR Scene -->
   <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
     
-    <!-- Camera -->
-    <a-camera position="0 1.6 0"></a-camera>
+    <!-- Camera adjusted -->
+    <a-camera 
+      position="0 1.2 0"   <!-- Lowered camera height -->
+      fov="60">            <!-- Narrower field of view -->
+    </a-camera>
 
     <!-- Static Cube -->
     <a-box 
-      position="0 0 -2" 
+      position="0 0 -3"     <!-- Moved farther from camera -->
       rotation="0 45 0" 
       color="#4CC3D9" 
       depth="1" 
@@ -35,7 +37,7 @@
       width="1">
     </a-box>
 
-    <!-- Optional Light -->
+    <!-- Lights -->
     <a-light type="ambient" color="#ffffff"></a-light>
     <a-light type="directional" position="0 4 -3" intensity="0.5"></a-light>
 
