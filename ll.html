@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AR Cube Floor Placement</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Cube Android Camera Fix</title>
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <!-- AR.js -->
@@ -14,7 +14,7 @@
       padding: 0;
       overflow: hidden;
       height: 100%;
-      touch-action: none; /* allow touch events */
+      touch-action: none;
     }
     #instructions {
       position: absolute;
@@ -33,12 +33,15 @@
 
 <div id="instructions">Tap anywhere to place the cube</div>
 
-<a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+<a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; 
+                        sourceWidth: window.innerWidth; sourceHeight: window.innerHeight;
+                        cameraParametersUrl: https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/data/data/camera_para.dat;
+                        trackingMethod: best;">
   
-  <!-- Camera -->
-  <a-camera id="camera" position="0 1.2 0" fov="60"></a-camera>
+  <!-- Back camera -->
+  <a-camera id="camera" position="0 1.2 0" fov="60" look-controls="enabled: true"></a-camera>
 
-  <!-- Cube (initially hidden) -->
+  <!-- Cube -->
   <a-box 
     id="cube"
     visible="false"
@@ -60,14 +63,23 @@
   const scene = document.querySelector('a-scene');
   const camera = document.getElementById('camera');
 
+  // Request back camera on Android
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { exact: "environment" } },
+    audio: false
+  }).then((stream) => {
+    const video = scene.querySelector('video');
+    if(video) video.srcObject = stream;
+  }).catch((err) => {
+    console.warn('Back camera not supported, using default', err);
+  });
+
   // Tap-to-place cube
-  scene.addEventListener('click', (event) => {
-    // Get center of screen for raycasting
+  scene.addEventListener('click', () => {
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2(0, 0); // center
     raycaster.setFromCamera(mouse, camera.getObject3D('camera'));
 
-    // Create a flat plane at y=0 (floor) for intersection
     const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const intersectionPoint = new THREE.Vector3();
     raycaster.ray.intersectPlane(floor, intersectionPoint);
