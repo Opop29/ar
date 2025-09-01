@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Location Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f9;
+      margin: 20px;
+    }
+    h2 {
+      text-align: center;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
+    }
+    input, button {
+      margin: 5px 0;
+      padding: 10px;
+      width: 100%;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    .location-card {
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 6px;
+    }
+    .actions button {
+      margin: 5px;
+      width: auto;
+    }
+    #map {
+      height: 400px;
+      margin-top: 10px;
+      border-radius: 6px;
+    }
+    .back-btn {
+      background: #ff5722;
+    }
+    .back-btn:hover {
+      background: #e64a19;
+    }
+    /* Hide default routing panel */
+    .leaflet-routing-container {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>GPS Location Tracker</h2>
+    <button class="back-btn" onclick="goBack()">⬅ Back</button>
+    <p><strong>Your Current Location:</strong></p>
+    <p id="userLocation">Fetching...</p>
+
+    <h3>Add / Update Location</h3>
+    <input type="hidden" id="locId" />
+    <input type="text" id="locName" placeholder="Location Name">
+    <input type="text" id="latitude" placeholder="Latitude">
+    <input type="text" id="longitude" placeholder="Longitude">
+    <button onclick="saveLocation()">Save Location</button>
+
+    <h3>Select Location on Map</h3>
+    <p>Click on the map to set latitude and longitude automatically.</p>
+    <div id="map"></div>
+
+    <h3>Saved Locations</h3>
+    <div id="locationsList"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    // Supabase init
+    const supabase = createClient(
+      "https://clywxultbpgqlqlorjjh.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNseXd4dWx0YnBncWxxbG9yampoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjAzNzUsImV4cCI6MjA3MTY5NjM3NX0.nAAU2oT9-hy7tekZGsVwNMKzTzZSRCvJWjBEiba8F3U"
+    );
+
+    let userCoords = null;
+    let map, marker;
+    let routingControl; // for real routes
+
+    // Back button
+    window.goBack = function () {
+      window.location.href = "home.html";
+    };
+
+    // Haversine formula (straight distance in meters)
+    function calcDistance(lat1, lon1, lat2, lon2) {
+      function toRad(value) { return value * Math.PI / 180; }
+      const R = 6371000;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // Get user GPS
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          userCoords = {lat: pos.coords.latitude, lon: pos.coords.longitude};
+          document.getElementById('userLocation').innerText = 
+            `Lat: ${userCoords.lat.toFixed(5)}, Lon: ${userCoords.lon.toFixed(5)}`;
+          if (!map) initMap(userCoords.lat, userCoords.lon);
+          displayLocations();
+        },
+        (err) => {
+          document.getElementById('userLocation').innerText = "Location access denied.";
+          initMap(7.9, 125.0);
+        }
+      );
+    } else {
+      document.getElementById('userLocation').innerText = "Geolocation not supported.";
+      initMap(7.9, 125.0);
+    }
+
+    // Init Leaflet map
+    function initMap(lat, lon) {
+      map = L.map('map').setView([lat, lon], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+
+      marker = L.marker([lat, lon]).addTo(map).bindPopup("You are here").openPopup();
+
+      map.on('click', function(e) {
+        const { lat, lng } = e.latlng;
+        document.getElementById('latitude').value = lat.toFixed(6);
+        document.getElementById('longitude').value = lng.toFixed(6);
+
+        if (marker) {
+          marker.setLatLng(e.latlng).setPopupContent("Selected Location").openPopup();
+        } else {
+          marker = L.marker(e.latlng).addTo(map).bindPopup("Selected Location").openPopup();
+        }
+      });
+    }
+
+    // Save / update location
+    window.saveLocation = async function () {
+      const id = document.getElementById("locId").value;
+      const name = document.getElementById('locName').value;
+      const lat = parseFloat(document.getElementById('latitude').value);
+      const lon = parseFloat(document.getElementById('longitude').value);
+
+      if (!name || isNaN(lat) || isNaN(lon)) {
+        alert("Please enter valid name and coordinates.");
+        return;
+      }
+
+      if (id) {
+        await supabase.from("locations").update({ name, latitude: lat, longitude: lon }).eq("id", id);
+      } else {
+        await supabase.from("locations").insert({ name, latitude: lat, longitude: lon });
+      }
+
+      clearForm();
+      displayLocations();
+    };
+
+    function clearForm() {
+      document.getElementById("locId").value = "";
+      document.getElementById("locName").value = "";
+      document.getElementById("latitude").value = "";
+      document.getElementById("longitude").value = "";
+    }
+
+    // Load + render locations
+    async function displayLocations() {
+      const { data } = await supabase.from("locations").select("*").order("id");
+      const listDiv = document.getElementById("locationsList");
+      listDiv.innerHTML = "";
+
+      data.forEach(loc => {
+        let distanceText = "";
+        if (userCoords) {
+          const dist = calcDistance(userCoords.lat, userCoords.lon, loc.latitude, loc.longitude);
+          distanceText = `<br><strong>Straight-line Distance:</strong> ${dist.toFixed(2)} meters`;
+        }
+        listDiv.innerHTML += `
+          <div class="location-card">
+            <strong>${loc.name}</strong><br>
+            Lat: ${loc.latitude}, Lon: ${loc.longitude}
+            ${distanceText}
+            <div class="actions">
+              <button onclick="viewLocation('${loc.name}', ${loc.latitude}, ${loc.longitude})">View</button>
+              <button onclick="editLocation(${loc.id}, '${loc.name}', ${loc.latitude}, ${loc.longitude})">Update</button>
+              <button onclick="deleteLocation(${loc.id})">Delete</button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // View location with real road route
+    window.viewLocation = function (name, lat, lon) {
+      if (!map) return;
+
+      let distanceMsg = "";
+      if (userCoords) {
+        const dist = calcDistance(userCoords.lat, userCoords.lon, lat, lon);
+        distanceMsg = `<br>Straight-line: ${dist.toFixed(2)} meters`;
+      } else {
+        distanceMsg = "<br>Distance: Unknown (no GPS)";
+      }
+
+      if (marker) {
+        marker.setLatLng([lat, lon]).setPopupContent(`${name}${distanceMsg}`).openPopup();
+      } else {
+        marker = L.marker([lat, lon]).addTo(map).bindPopup(`${name}${distanceMsg}`).openPopup();
+      }
+
+      // Remove old route
+      if (routingControl) {
+        map.removeControl(routingControl);
+      }
+
+      // Draw real road route
+      if (userCoords) {
+        routingControl = L.Routing.control({
+          waypoints: [
+            L.latLng(userCoords.lat, userCoords.lon),
+            L.latLng(lat, lon)
+          ],
+          lineOptions: {
+            styles: [{ color: "blue", weight: 5 }]
+          },
+          routeWhileDragging: false,
+          draggableWaypoints: false,
+          addWaypoints: false
+        }).addTo(map);
+      }
+
+      map.setView([lat, lon], 14);
+    };
+
+    // Edit
+    window.editLocation = function (id, name, lat, lon) {
+      document.getElementById("locId").value = id;
+      document.getElementById("locName").value = name;
+      document.getElementById("latitude").value = lat;
+      document.getElementById("longitude").value = lon;
+      if (marker) {
+        marker.setLatLng([lat, lon]).setPopupContent("Editing: " + name).openPopup();
+        map.setView([lat, lon], 15);
+      }
+    };
+
+    // Delete
+    window.deleteLocation = async function (id) {
+      if (confirm("Delete this location?")) {
+        await supabase.from("locations").delete().eq("id", id);
+        displayLocations();
+      }
+    };
+
+    // Load on startup
+    displayLocations();
+  </script>
+</body>
+</html>
