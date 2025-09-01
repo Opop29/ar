@@ -1,331 +1,132 @@
-<!--
-AR Floor Placer — Single-file HTML
-Works on WebXR-enabled browsers (Chrome on Android with WebXR & AR Module).
-Fallback to non-AR desktop mode (click on ground plane to place and drag to move).
-Features:bb
- - Choose shape (Cube, Sphere, Cone)
- - Place object on floor using AR hit-test (or click on desktop)
- - Tap/Click and drag objects to move them
- - Long-press or press Delete button to remove selected object
- - Simple UI overlay
-
-Notes: For full AR experience, use a device with WebXR AR support and secure context (https).
--->
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>AR Floor Placer</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Cube Navigator</title>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-ar@1.8.2/dist/aframe-ar.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-gps-entity-place@1.9.2/dist/aframe-gps-entity-place.min.js"></script>
   <style>
-    html,body{height:100%;margin:0}
-    #ui{
-      position:fixed;left:12px;top:12px;z-index:5;backdrop-filter: blur(6px);background:rgba(255,255,255,0.85);padding:8px;border-radius:8px;font-family:system-ui,Arial}
-    #ui select, #ui button{margin:6px 4px;padding:8px;border-radius:6px;border:1px solid #ccc}
-    #message{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;background:rgba(0,0,0,0.6);color:#fff;padding:8px 12px;border-radius:8px;font-family:system-ui;z-index:5}
-    #enterAR{display:block;margin-top:6px}
-    #canvasHolder{width:100%;height:100%;touch-action:none}
-    .hint{font-size:12px;color:#333}
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      background: black;
+      font-family: Arial, sans-serif;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.8);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 100;
+    }
+    button {
+      margin-top: 5px;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #4CAF50;
+      color: white;
+    }
   </style>
 </head>
 <body>
   <div id="ui">
-    <div>
-      <label class="hint">Shape:</label>
-      <select id="shapeSel">
-        <option value="box">Cube</option>
-        <option value="sphere">Sphere</option>
-        <option value="cone">Cone</option>
-      </select>
-      <button id="placeBtn">Place</button>
-      <button id="deleteBtn">Delete Selected</button>
-    </div>
-    <div>
-      <label class="hint">Scale:</label>
-      <input id="scaleRange" type="range" min="0.1" max="3" step="0.05" value="1">
-    </div>
-    <div>
-      <button id="clearBtn">Clear All</button>
-      <button id="helpBtn">Help</button>
-    </div>
-    <button id="enterAR">Enter AR</button>
+    <h3>AR Cube Navigator</h3>
+    <p><strong>Your Location:</strong> <span id="userCoords">Fetching...</span></p>
+    <input type="text" id="locName" placeholder="Location Name"><br>
+    <input type="text" id="latitude" placeholder="Latitude"><br>
+    <input type="text" id="longitude" placeholder="Longitude"><br>
+    <button onclick="saveLocation()">Save Location</button>
+    <div id="locationsList"></div>
   </div>
 
-  <div id="canvasHolder"></div>
-  <div id="message">Tap 'Enter AR' to try WebXR AR or use 'Place' to put objects (desktop fallback available).</div>
+  <!-- AR Scene -->
+  <a-scene
+    vr-mode-ui="enabled: false"
+    embedded
+    arjs="sourceType: gps; gpsMinAccuracy: 100; debugUIEnabled: false;"
+  >
+    <!-- The camera tracks GPS -->
+    <a-camera gps-camera rotation-reader></a-camera>
+  </a-scene>
 
-  <!-- three.js and supporting libs -->
-  <script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.150.1/examples/jsm/controls/OrbitControls.js"></script>
-  <script src="https://unpkg.com/three@0.150.1/examples/jsm/webxr/ARButton.js"></script>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  <script>
-  // Basic scene + AR setup
-  let camera, scene, renderer;
-  let controller; // XR controller for input
-  let reticle; // placement reticle
-  let hitTestSource = null;
-  let hitTestSourceRequested = false;
-
-  const objects = [];
-  let selected = null;
-
-  const container = document.getElementById('canvasHolder');
-
-  init();
-  animate();
-
-  function init(){
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
-
-    renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true;
-    container.appendChild(renderer.domElement);
-
-    // light
-    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-    scene.add(light);
-
-    // ground (invisible helper for non-AR)
-    const grid = new THREE.GridHelper(10,10,0x444444,0x888888);
-    grid.position.y = 0;
-    grid.visible = true;
-    scene.add(grid);
-
-    // reticle for AR placement
-    reticle = new THREE.Mesh(
-      new THREE.RingGeometry(0.08, 0.12, 32).rotateX(-Math.PI/2),
-      new THREE.MeshBasicMaterial({color:0x00ff00})
+    // Supabase setup
+    const supabase = createClient(
+      "https://clywxultbpgqlqlorjjh.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNseXd4dWx0YnBncWxxbG9yampoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjAzNzUsImV4cCI6MjA3MTY5NjM3NX0.nAAU2oT9-hy7tekZGsVwNMKzTzZSRCvJWjBEiba8F3U"
     );
-    reticle.matrixAutoUpdate = false;
-    reticle.visible = false;
-    scene.add(reticle);
 
-    // controller for taps
-    controller = renderer.xr.getController(0);
-    controller.addEventListener('select', onSelect); // XR tap
-    scene.add(controller);
+    let userCoords = null;
 
-    // non-XR pointer interactions
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
-
-    window.addEventListener('resize', onWindowResize);
-
-    // AR Button
-    const arButton = ARButton.createButton(renderer, {requiredFeatures:['hit-test']});
-    document.getElementById('enterAR').replaceWith(arButton);
-
-    // UI
-    document.getElementById('placeBtn').addEventListener('click', ()=>{ placeAtCenter(); });
-    document.getElementById('deleteBtn').addEventListener('click', deleteSelected);
-    document.getElementById('clearBtn').addEventListener('click', clearAll);
-    document.getElementById('helpBtn').addEventListener('click', showHelp);
-    document.getElementById('scaleRange').addEventListener('input', (e)=>{ if(selected) selected.scale.setScalar(e.target.value); });
-
-    // Orbit controls only for non-XR preview
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    camera.position.set(0,1.6,3);
-    controls.target.set(0,0,0);
-    controls.update();
-
-    // small instruction
-    setMessage('Ready — choose a shape and press Place, or enter AR and tap to place.');
-  }
-
-  function createShape(type){
-    let geom;
-    switch(type){
-      case 'sphere': geom = new THREE.SphereGeometry(0.25,32,32); break;
-      case 'cone': geom = new THREE.ConeGeometry(0.25,0.5,32); break;
-      default: geom = new THREE.BoxGeometry(0.5,0.5,0.5);
-    }
-    const mat = new THREE.MeshStandardMaterial({color: Math.random()*0xffffff, roughness:0.6, metalness:0.2});
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.userData.draggable = true;
-    return mesh;
-  }
-
-  // Place at center of camera view (non-XR or when reticle hidden)
-  function placeAtCenter(){
-    const shape = document.getElementById('shapeSel').value;
-    const mesh = createShape(shape);
-    // try to place where reticle is visible (AR)
-    if(reticle.visible){
-      mesh.position.setFromMatrixPosition(reticle.matrix);
-    } else {
-      // raycast from camera to ground plane y=0
-      const dir = new THREE.Vector3(0,0,-1).transformDirection(camera.matrixWorld);
-      const origin = camera.position.clone();
-      const t = (0 - origin.y) / dir.y;
-      const pos = origin.clone().add(dir.multiplyScalar(t));
-      mesh.position.copy(pos);
-    }
-    scene.add(mesh);
-    objects.push(mesh);
-    selectObject(mesh);
-  }
-
-  function onSelect(){
-    // Called by XR tap: place at reticle
-    if(reticle.visible){
-      const shape = document.getElementById('shapeSel').value;
-      const mesh = createShape(shape);
-      mesh.position.setFromMatrixPosition(reticle.matrix);
-      scene.add(mesh);
-      objects.push(mesh);
-      selectObject(mesh);
-    }
-  }
-
-  // Pointer drag to move objects (desktop and AR)
-  let isPointerDown = false;
-  let dragObject = null;
-  let pointerId = null;
-
-  function onPointerDown(event){
-    isPointerDown = true;
-    pointerId = event.pointerId;
-    const x = (event.clientX / window.innerWidth) * 2 - 1;
-    const y = - (event.clientY / window.innerHeight) * 2 + 1;
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera({x,y}, camera);
-    const intersects = raycaster.intersectObjects(objects, true);
-    if(intersects.length>0){
-      dragObject = intersects[0].object;
-      selectObject(dragObject);
-    } else {
-      // place new if not clicked on object
-      // optionally create
-    }
-  }
-
-  function onPointerMove(event){
-    if(!isPointerDown || !dragObject) return;
-    // compute a ground hit or AR hit-test if in XR
-    if(renderer.xr.isPresenting){
-      // try to use hit-test at pointer location - but WebXR hit-test with transient input is complex
-      // We'll approximate by casting a ray from camera through screen and intersecting a horizontal plane y=dragObject.position.y
-      const planeY = dragObject.position.y;
-      const x = (event.clientX / window.innerWidth) * 2 - 1;
-      const y = - (event.clientY / window.innerHeight) * 2 + 1;
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera({x,y}, camera);
-      const dir = raycaster.ray.direction;
-      const origin = raycaster.ray.origin;
-      const t = (planeY - origin.y) / dir.y;
-      if(isFinite(t)){
-        const newPos = origin.clone().add(dir.multiplyScalar(t));
-        dragObject.position.copy(newPos);
-      }
-    } else {
-      // desktop: intersect with plane y=0
-      const planeY = 0.0;
-      const x = (event.clientX / window.innerWidth) * 2 - 1;
-      const y = - (event.clientY / window.innerHeight) * 2 + 1;
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera({x,y}, camera);
-      const dir = raycaster.ray.direction;
-      const origin = raycaster.ray.origin;
-      const t = (planeY - origin.y) / dir.y;
-      if(isFinite(t)){
-        const newPos = origin.clone().add(dir.multiplyScalar(t));
-        dragObject.position.copy(newPos);
-      }
-    }
-  }
-
-  function onPointerUp(event){
-    isPointerDown = false;
-    dragObject = null;
-  }
-
-  function selectObject(obj){
-    if(selected) selected.material.emissive && (selected.material.emissive.setHex(0x000000));
-    selected = obj;
-    if(selected.material && selected.material.emissive) selected.material.emissive.setHex(0x333333);
-    document.getElementById('scaleRange').value = selected.scale.x;
-  }
-
-  function deleteSelected(){
-    if(!selected) return setMessage('No object selected');
-    scene.remove(selected);
-    const idx = objects.indexOf(selected);
-    if(idx!==-1) objects.splice(idx,1);
-    selected = null;
-    setMessage('Selected object deleted');
-  }
-
-  function clearAll(){
-    objects.forEach(o=> scene.remove(o));
-    objects.length = 0;
-    selected = null;
-    setMessage('All objects removed');
-  }
-
-  function showHelp(){
-    alert('Instructions:\n- Enter AR and tap the screen to place shapes on the floor (requires WebXR hit-test).\n- On desktop, use Place to drop at camera center.\n- Click/tap an object and drag to move it.\n- Use Scale slider to resize selected object.\n- Delete Selected or Clear All to remove objects.');
-  }
-
-  function setMessage(text, time=3000){
-    const el = document.getElementById('message');
-    el.textContent = text;
-    if(time>0){
-      clearTimeout(el._t);
-      el._t = setTimeout(()=>{ el.textContent = ''; }, time);
-    }
-  }
-
-  // XR animation loop + hit-test handling
-  function animate(){
-    renderer.setAnimationLoop(render);
-  }
-
-  function render(timestamp, frame){
-    if(frame){
-      const session = renderer.xr.getSession();
-      if(hitTestSourceRequested === false){
-        session.requestReferenceSpace('viewer').then(function(refSpace){
-          session.requestHitTestSource({space: refSpace}).then(function(source){
-            hitTestSource = source;
-          });
-        });
-
-        session.addEventListener('end', function(){
-          hitTestSourceRequested = false;
-          hitTestSource = null;
-        });
-
-        hitTestSourceRequested = true;
-      }
-
-      if(hitTestSource){
-        const referenceSpace = renderer.xr.getReferenceSpace();
-        const hitTestResults = frame.getHitTestResults(hitTestSource);
-        if(hitTestResults.length){
-          const hit = hitTestResults[0];
-          const pose = hit.getPose(referenceSpace);
-          reticle.visible = true;
-          reticle.matrix.fromArray(pose.transform.matrix);
-        } else {
-          reticle.visible = false;
+    // Get user GPS
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          userCoords = {lat: pos.coords.latitude, lon: pos.coords.longitude};
+          document.getElementById("userCoords").innerText =
+            `${userCoords.lat.toFixed(5)}, ${userCoords.lon.toFixed(5)}`;
+          displayLocations();
+        },
+        (err) => {
+          document.getElementById("userCoords").innerText = "Location denied";
         }
-      }
+      );
     }
 
-    renderer.render(scene, camera);
-  }
+    // Save location
+    window.saveLocation = async function () {
+      const name = document.getElementById("locName").value;
+      const lat = parseFloat(document.getElementById("latitude").value);
+      const lon = parseFloat(document.getElementById("longitude").value);
 
-  function onWindowResize(){
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+      if (!name || isNaN(lat) || isNaN(lon)) {
+        alert("Please enter valid name and coordinates.");
+        return;
+      }
+
+      await supabase.from("locations").insert({ name, latitude: lat, longitude: lon });
+      displayLocations();
+    };
+
+    // Load + render AR cubes
+    async function displayLocations() {
+      const { data } = await supabase.from("locations").select("*").order("id");
+      const listDiv = document.getElementById("locationsList");
+      listDiv.innerHTML = "";
+
+      const scene = document.querySelector("a-scene");
+
+      // Remove old cubes before re-rendering
+      scene.querySelectorAll(".ar-cube").forEach(el => el.remove());
+
+      data.forEach(loc => {
+        // Add to UI
+        listDiv.innerHTML += `<div><strong>${loc.name}</strong> (${loc.latitude}, ${loc.longitude})</div>`;
+
+        // Create AR cube
+        const cube = document.createElement("a-box");
+        cube.setAttribute("gps-entity-place", `latitude: ${loc.latitude}; longitude: ${loc.longitude};`);
+        cube.setAttribute("scale", "5 5 5");
+        cube.setAttribute("material", "color: red; opacity: 0.7;");
+        cube.setAttribute("class", "ar-cube");
+
+        // Floating animation
+        cube.setAttribute("animation", "property: position; dir: alternate; dur: 2000; loop: true; to: 0 5 0");
+
+        // Add cube to AR scene
+        scene.appendChild(cube);
+      });
+    }
   </script>
 </body>
 </html>
