@@ -2,210 +2,113 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Location Tracker + AR</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Simple AR Floating Cube (Tap to Select)</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+  <!-- AR.js for A-Frame (marker-based, works broadly) -->
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
+
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      height: 100vh;
-    }
-    #map { flex: 2; }
-    #sidebar {
-      flex: 1;
-      padding: 10px;
-      overflow-y: auto;
-      border-left: 2px solid #ddd;
-    }
-    .location-card {
-      background: #f9f9f9;
-      margin: 8px 0;
-      padding: 8px;
-      border-radius: 6px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    .actions button { margin: 4px; }
-    #locationSelect {
-      width: 100%;
-      padding: 6px;
-      margin-bottom: 10px;
-    }
-    #ar-container {
-      display: none;
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: black;
-      z-index: 1000;
-    }
-    #exitArBtn {
-      position: absolute;
-      top: 10px; right: 10px;
-      z-index: 1100;
-      padding: 10px;
-      background: red;
-      color: white;
-      border: none;
-      border-radius: 6px;
+    body, html { margin: 0; height: 100%; overflow: hidden; }
+    .hud {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      padding: 10px 12px; font-family: system-ui, Arial, sans-serif;
+      background: linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0));
+      color: #fff; text-align: center; font-size: 14px;
+      pointer-events: none;
     }
   </style>
-
-  <!-- A-Frame + AR.js -->
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar-nft.js"></script>
 </head>
 <body>
-  <div id="map"></div>
-  <div id="sidebar">
-    <h3>Locations</h3>
-    <select id="locationSelect">
-      <option value="">-- Select Location --</option>
-    </select>
-    <button onclick="openAR()">🌍 AR View</button>
-    <div id="locationList"></div>
+  <!-- AR Scene -->
+  <a-scene
+    renderer="antialias: true; physicallyCorrectLights: true"
+    vr-mode-ui="enabled: false"
+    embedded
+    arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best">
+    
+    <!-- Camera with tap cursor/raycaster so taps select .clickable objects -->
+    <a-entity id="cameraRig" camera
+              raycaster="objects: .clickable"
+              cursor="rayOrigin: mouse">
+    </a-entity>
+
+    <!-- HIRO marker (holds our content) -->
+    <a-marker type="pattern" preset="hiro">
+      <!-- Soft light so the cube looks nicer -->
+      <a-entity light="type: ambient; intensity: 0.6"></a-entity>
+      <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
+
+      <!-- Floating cube -->
+      <a-box id="cube"
+             class="clickable"
+             position="0 0.5 0"
+             depth="1" height="1" width="1"
+             color="#4CC3D9"
+             shadow="cast: true; receive: false"
+             material="metalness: 0.2; roughness: 0.6">
+        <!-- Gentle up/down float -->
+        <a-animation
+          attribute="position"
+          dur="1800"
+          from="0 0.45 0"
+          to="0 0.65 0"
+          direction="alternate"
+          repeat="indefinite"
+          easing="easeInOutSine">
+        </a-animation>
+      </a-box>
+
+      <!-- Simple ground so shadow has a target (optional) -->
+      <a-plane rotation="-90 0 0" width="3" height="3" color="#ffffff" material="opacity:0; transparent:true"></a-plane>
+    </a-marker>
+
+    <!-- Required for AR.js without markers (keeps camera updating) -->
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <div class="hud">
+    Point at a <b>HIRO</b> marker. Tap the cube to select/deselect. Selected = bigger + spinning.
   </div>
 
-  <!-- AR container -->
-  <div id="ar-container">
-    <button id="exitArBtn" onclick="closeAR()">Exit AR</button>
-    <a-scene
-      embedded
-      vr-mode-ui="enabled: false"
-      renderer="antialias: true; alpha: true"
-      arjs="sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
-      id="arScene"
-    >
-      <a-camera gps-camera rotation-reader></a-camera>
-    </a-scene>
-  </div>
-
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/@supabase/supabase-js"></script>
   <script>
-    const map = L.map("map").setView([7.5, 125.0], 13);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors"
-    }).addTo(map);
+    // Simple select/deselect behavior
+    (function () {
+      const cube = document.getElementById('cube');
+      let selected = false;
 
-    let userMarker;
-    let userCoords = null;
-    let arObjects = [];
-
-   const supabaseUrl = "https://clywxultbpgqlqlorjjh.supabase.co";
-    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNseXd4dWx0YnBncWxxbG9yampoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjAzNzUsImV4cCI6MjA3MTY5NjM3NX0.nAAU2oT9-hy7tekZGsVwNMKzTzZSRCvJWjBEiba8F3U";
-    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-    function calcDistance(lat1, lon1, lat2, lon2) {
-      function toRad(v) { return v * Math.PI / 180; }
-      const R = 6371000;
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    async function displayLocations() {
-      const { data, error } = await supabase.from("locations").select("*");
-      if (error) { console.error(error); return; }
-
-      const listDiv = document.getElementById("locationList");
-      const select = document.getElementById("locationSelect");
-      listDiv.innerHTML = "";
-      select.innerHTML = `<option value="">-- Select Location --</option>`;
-      arObjects = [];
-
-      data.forEach(loc => {
-        let distanceText = "";
-        if (userCoords) {
-          const dist = calcDistance(userCoords.lat, userCoords.lon, loc.latitude, loc.longitude);
-          distanceText = `<br><strong>Distance:</strong> ${dist.toFixed(2)} m`;
-        }
-        listDiv.innerHTML += `
-          <div class="location-card">
-            <strong>${loc.name}</strong><br>
-            Lat: ${loc.latitude}, Lon: ${loc.longitude}
-            ${distanceText}
-            <div class="actions">
-              <button onclick="viewLocation('${loc.name}', ${loc.latitude}, ${loc.longitude})">View</button>
-            </div>
-          </div>
-        `;
-
-        const option = document.createElement("option");
-        option.value = JSON.stringify({lat: loc.latitude, lon: loc.longitude, name: loc.name});
-        option.textContent = loc.name;
-        select.appendChild(option);
-
-        L.marker([loc.latitude, loc.longitude]).addTo(map)
-          .bindPopup(`<b>${loc.name}</b>`);
-
-        arObjects.push(loc);
-      });
-    }
-
-    function viewLocation(name, lat, lon) {
-      map.setView([lat, lon], 16);
-      L.popup().setLatLng([lat, lon]).setContent(`<b>${name}</b>`).openOn(map);
-    }
-
-    document.getElementById("locationSelect").addEventListener("change", (e) => {
-      if (e.target.value) {
-        const loc = JSON.parse(e.target.value);
-        viewLocation(loc.name, loc.lat, loc.lon);
-      }
-    });
-
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(pos => {
-        const { latitude, longitude } = pos.coords;
-        userCoords = { lat: latitude, lon: longitude };
-        if (!userMarker) {
-          userMarker = L.marker([latitude, longitude]).addTo(map).bindPopup("You are here");
-          map.setView([latitude, longitude], 15);
+      function setSelected(on) {
+        selected = on;
+        if (selected) {
+          // Slightly larger, different color, and start a slow spin
+          cube.setAttribute('color', '#FF8888');
+          cube.setAttribute('scale', '1.2 1.2 1.2');
+          cube.setAttribute('animation__spin', {
+            property: 'rotation',
+            to: '0 360 0',
+            loop: true,
+            dur: 2500,
+            easing: 'linear'
+          });
         } else {
-          userMarker.setLatLng([latitude, longitude]);
+          // Reset to defaults and stop spinning
+          cube.setAttribute('color', '#4CC3D9');
+          cube.setAttribute('scale', '1 1 1');
+          cube.removeAttribute('animation__spin');
         }
-        displayLocations();
-      }, err => console.error(err), { enableHighAccuracy: true });
-    }
+      }
 
-    function openAR() {
-      document.getElementById("ar-container").style.display = "block";
-      const scene = document.getElementById("arScene");
+      // Toggle on click/tap
+      cube.addEventListener('click', () => setSelected(!selected));
 
-      scene.querySelectorAll("a-box, a-text").forEach(el => el.remove());
-
-      arObjects.forEach(loc => {
-        const box = document.createElement("a-box");
-        box.setAttribute("gps-entity-place", `latitude: ${loc.latitude}; longitude: ${loc.longitude}`);
-        box.setAttribute("color", "orange");
-        box.setAttribute("depth", "3");
-        box.setAttribute("height", "3");
-        box.setAttribute("width", "3");
-        box.setAttribute("animation", "property: rotation; to: 0 360 0; loop: true; dur: 8000");
-        scene.appendChild(box);
-
-        const label = document.createElement("a-text");
-        label.setAttribute("value", loc.name);
-        label.setAttribute("gps-entity-place", `latitude: ${loc.latitude}; longitude: ${loc.longitude}`);
-        label.setAttribute("align", "center");
-        label.setAttribute("color", "white");
-        label.setAttribute("scale", "5 5 5");
-        label.setAttribute("position", "0 4 0");
-        scene.appendChild(label);
+      // Optional: keyboard toggle for desktop testing
+      window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 's') setSelected(!selected);
       });
-    }
-
-    function closeAR() {
-      document.getElementById("ar-container").style.display = "none";
-    }
-
-    displayLocations();
+    })();
   </script>
 </body>
 </html>
