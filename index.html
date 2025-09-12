@@ -1,65 +1,306 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Home</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Simple GPS AR — Debugged & Permission-friendly</title>
   <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      text-align: center;
-      margin: 0;
-      padding: 50px 20px;
-      background: linear-gradient(135deg, #4CAF50, #2e7d32);
-      color: #fff;
-    }
-    h1 {
-      margin-bottom: 10px;
-      font-size: 2.5em;
-    }
-    p {
-      margin-bottom: 30px;
-      font-size: 18px;
-    }
-    .btn-container {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    button {
-      padding: 14px 24px;
-      font-size: 16px;
-      font-weight: bold;
-      background: #fff;
-      color: #2e7d32;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-    button:hover {
-      background: #2e7d32;
-      color: #fff;
-      transform: translateY(-3px);
-      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-    }
+    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#121212;color:#fff}
+    #app{position:relative;height:100%;overflow:hidden}
+    video#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);background:#000}
+    #noCam{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#111,#0b0b0b);color:#ddd}
+    #overlay{position:absolute;inset:0;pointer-events:none}
+
+    .marker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:6px}
+    .bubble{padding:8px 12px;border-radius:12px;background:rgba(0,0,0,0.6);color:#fff;backdrop-filter:blur(4px);font-weight:600}
+    .dot{width:18px;height:18px;border-radius:50%;background:rgba(0,200,120,0.95);box-shadow:0 4px 12px rgba(0,0,0,0.6)}
+
+    #controls{position:absolute;left:10px;bottom:18px;z-index:30;display:flex;gap:8px;flex-wrap:wrap}
+    button{appearance:none;border:0;padding:10px 12px;border-radius:10px;background:#fff;color:#000;font-weight:700}
+    input,select{padding:8px;border-radius:10px;border:1px solid #ddd}
+
+    #side{position:absolute;right:10px;top:10px;z-index:30;max-width:320px;background:rgba(255,255,255,0.95);color:#111;padding:8px;border-radius:8px;overflow:auto;max-height:70vh}
+    #status{position:absolute;left:10px;top:10px;color:#fff;text-shadow:0 1px 2px #000;z-index:40}
+    small{font-size:12px;color:#666}
+
+    #startOverlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.6),rgba(0,0,0,0.85));z-index:60;display:flex;align-items:center;justify-content:center}
+    #startCard{width:92%;max-width:520px;background:rgba(255,255,255,0.97);padding:18px;border-radius:12px;color:#111;text-align:left}
+    .permRow{display:flex;justify-content:space-between;padding:6px;border-radius:8px;background:#fff;margin-top:8px}
+    .smallMuted{font-size:12px;color:#444}
+
+    .hidden{display:none}
+    .btn-danger{background:#ff4d4f;color:#fff}
+    .btn-ghost{background:transparent;border:1px solid #fff;color:#fff}
   </style>
 </head>
 <body>
-  <h1>Welcome to My Home Page</h1>
-  <p>This is a simple HTML page called <strong>home.html</strong>.</p>
+  <div id="app">
+    <video id="cam" autoplay playsinline muted></video>
+    <div id="noCam" class="hidden">Camera not running — allow camera permission or press Start AR.</div>
+    <div id="overlay"></div>
 
-  <div class="btn-container">
-    <!-- Go to Set Location page -->
-    <button onclick="window.location.href='location.html'">📍 Set Location</button>
+    <div id="status">Ready — press <strong>Start AR</strong> to request permissions.</div>
 
-    <!-- Go to AR Navigation page -->
-    <button onclick="window.location.href='arnavigation.html'">📷 Open Camera AR Navigation</button>
+    <div id="controls">
+      <button id="startAR">Start AR (request permissions)</button>
+      <button id="toggleCam" class="hidden">Stop Camera</button>
+      <button id="addBtn">+ Add Object Here</button>
+      <input id="labelInput" placeholder="Label (optional)" />
+      <button id="clearBtn">Clear All</button>
+      <button id="exportBtn">Export JSON</button>
+      <input id="importFile" type="file" accept="application/json" style="display:none" />
+      <button id="importBtn">Import JSON</button>
+    </div>
 
-    <!-- New button to open ar.html -->
-    <button onclick="window.location.href='ll.html'">🌐 Open AR Page</button>
+    <div id="side">
+      <strong>Saved objects</strong>
+      <div id="list" style="margin-top:8px"></div>
+      <hr />
+      <div><strong>Permission status</strong></div>
+      <div class="permRow">Camera: <span id="cameraStatus">unknown</span></div>
+      <div class="permRow">Location: <span id="locationStatus">unknown</span></div>
+      <div class="permRow">Motion: <span id="motionStatus">unknown</span></div>
+      <div style="margin-top:8px" class="smallMuted">If any permission shows <em>denied</em>, open your browser's site settings to re-enable (or reload and try again).</div>
+      <hr />
+      <div><strong>Manual add</strong></div>
+      <div style="margin-top:6px">
+        <input id="manualLat" placeholder="Latitude" />
+        <input id="manualLon" placeholder="Longitude" style="margin-left:6px" />
+        <button id="manualAdd">Add Manual</button>
+      </div>
+    </div>
   </div>
+
+  <script>
+    // Robust permission handling and helpful error messages for NotAllowedError cases.
+    const video = document.getElementById('cam');
+    const noCam = document.getElementById('noCam');
+    const overlay = document.getElementById('overlay');
+    const status = document.getElementById('status');
+    const startAR = document.getElementById('startAR');
+    const toggleCam = document.getElementById('toggleCam');
+    const addBtn = document.getElementById('addBtn');
+    const labelInput = document.getElementById('labelInput');
+    const list = document.getElementById('list');
+    const clearBtn = document.getElementById('clearBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+
+    const cameraStatusEl = document.getElementById('cameraStatus');
+    const locationStatusEl = document.getElementById('locationStatus');
+    const motionStatusEl = document.getElementById('motionStatus');
+
+    const manualLat = document.getElementById('manualLat');
+    const manualLon = document.getElementById('manualLon');
+    const manualAdd = document.getElementById('manualAdd');
+
+    let stream = null;
+    let watchId = null;
+    let currentPos = null; // {lat, lon, accuracy}
+    let heading = null;
+    let saved = JSON.parse(localStorage.getItem('ar_markers') || '[]');
+    let cameraEnabled = false, locationEnabled = false, motionEnabled = false;
+
+    // Utils
+    function toRad(d){return d*Math.PI/180}
+    function toDeg(r){return r*180/Math.PI}
+    function haversine(lat1,lon1,lat2,lon2){
+      const R=6371000; const dLat=toRad(lat2-lat1); const dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+      const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); return R*c;
+    }
+    function bearingTo(lat1,lon1,lat2,lon2){
+      const y=Math.sin(toRad(lon2-lon1))*Math.cos(toRad(lat2));
+      const x=Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lon2-lon1));
+      let brng = toDeg(Math.atan2(y,x)); brng = (brng+360)%360; return brng;
+    }
+
+    // Permission-aware camera start
+    async function startCamera(){
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        video.srcObject = stream; video.play().catch(()=>{});
+        cameraEnabled = true; cameraStatusEl.textContent = 'granted';
+        noCam.classList.add('hidden'); toggleCam.classList.remove('hidden');
+        status.textContent = 'Camera started.';
+      }catch(err){
+        console.error('Camera error', err);
+        cameraEnabled = false;
+        cameraStatusEl.textContent = err.name || 'denied';
+        noCam.classList.remove('hidden');
+        toggleCam.classList.add('hidden');
+        // Specific guidance for NotAllowedError
+        if(err && err.name === 'NotAllowedError'){
+          status.textContent = 'Camera permission denied. Open site settings to allow camera for this site.';
+        } else {
+          status.textContent = 'Camera not available.';
+        }
+      }
+    }
+    function stopCamera(){
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+      video.srcObject = null; cameraEnabled = false; cameraStatusEl.textContent = 'stopped'; noCam.classList.remove('hidden'); toggleCam.classList.add('hidden'); status.textContent = 'Camera stopped.';
+    }
+
+    // Geolocation start (getCurrentPosition + watchPosition)
+    function startLocation(){
+      if(!('geolocation' in navigator)){
+        locationStatusEl.textContent = 'unavailable'; status.textContent = 'Geolocation not supported.'; return;
+      }
+      // initial getCurrentPosition to surface permission prompt
+      navigator.geolocation.getCurrentPosition(p=>{
+        currentPos = {lat:p.coords.latitude, lon:p.coords.longitude, accuracy:p.coords.accuracy};
+        locationEnabled = true; locationStatusEl.textContent = 'granted';
+        status.textContent = `Location: ${currentPos.lat.toFixed(6)}, ${currentPos.lon.toFixed(6)} (±${Math.round(currentPos.accuracy)}m)`;
+        renderList(); updateMarkers();
+        if(watchId === null){
+          watchId = navigator.geolocation.watchPosition(p=>{
+            currentPos = {lat:p.coords.latitude, lon:p.coords.longitude, accuracy:p.coords.accuracy};
+            status.textContent = `Lat: ${currentPos.lat.toFixed(6)} Lon: ${currentPos.lon.toFixed(6)} Acc: ${Math.round(currentPos.accuracy)}m`;
+            updateMarkers(); renderList();
+          }, err=>{
+            console.warn('watchPosition error', err); locationEnabled = false; locationStatusEl.textContent = err.code===1 ? 'denied' : 'error'; status.textContent = 'Location permission denied or error.';
+          }, {enableHighAccuracy:true, maximumAge:1000, timeout:10000});
+        }
+      }, err=>{
+        console.warn('getCurrentPosition error', err); locationEnabled = false; locationStatusEl.textContent = err.code===1 ? 'denied' : 'error'; status.textContent = 'Location permission denied or error.';
+      }, {enableHighAccuracy:true, maximumAge:1000, timeout:10000});
+    }
+    function stopLocation(){ if(watchId !== null){ navigator.geolocation.clearWatch(watchId); watchId = null; locationEnabled = false; locationStatusEl.textContent='stopped'; } }
+
+    // Motion / compass
+    function handleOrientation(e){
+      // Prefer webkitCompassHeading on some iOS devices
+      if(e && (e.webkitCompassHeading !== undefined)) heading = e.webkitCompassHeading; else heading = e.alpha;
+      if(typeof heading === 'number') heading = (heading + 360) % 360;
+      motionStatusEl.textContent = 'granted'; motionEnabled = true; updateMarkers();
+    }
+    async function startMotion(){
+      if(!window.DeviceOrientationEvent){ motionStatusEl.textContent = 'unavailable'; return; }
+      if(typeof DeviceOrientationEvent.requestPermission === 'function'){
+        try{
+          const perm = await DeviceOrientationEvent.requestPermission();
+          if(perm === 'granted'){ window.addEventListener('deviceorientation', handleOrientation); motionEnabled = true; motionStatusEl.textContent = 'granted'; }
+          else { motionEnabled = false; motionStatusEl.textContent = perm || 'denied'; status.textContent = 'Motion permission denied.'; }
+        }catch(err){ console.warn('DeviceOrientation request error', err); motionEnabled = false; motionStatusEl.textContent = err.name || 'denied'; }
+      } else {
+        // no explicit permission flow required on many Android browsers
+        window.addEventListener('deviceorientation', handleOrientation); motionEnabled = true; motionStatusEl.textContent = 'granted';
+      }
+    }
+
+    // Markers UI
+    function renderList(){
+      list.innerHTML = '';
+      if(!saved.length){ list.innerHTML = '<div><em>None</em></div>'; return }
+      saved.forEach((m,i)=>{
+        const el = document.createElement('div'); el.style.padding='6px'; el.style.borderBottom='1px solid #eee';
+        el.innerHTML = `<div><strong>${m.label||'Object '+(i+1)}</strong></div><small>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</small>`;
+        const btn = document.createElement('button'); btn.textContent='Remove'; btn.style.marginTop='6px'; btn.onclick=()=>{ saved.splice(i,1); saveAndUpdate(); };
+        el.appendChild(btn); list.appendChild(el);
+      });
+    }
+    function saveAndUpdate(){ localStorage.setItem('ar_markers', JSON.stringify(saved)); renderList(); updateMarkers(); }
+
+    function addMarkerAtCurrent(){
+      if(!currentPos){ alert('Waiting for GPS fix. You can add manually using the fields at the right.'); return }
+      const label = labelInput.value.trim() || `Object ${saved.length+1}`;
+      saved.push({lat:currentPos.lat, lon:currentPos.lon, label:label, created:Date.now()}); saveAndUpdate(); labelInput.value='';
+    }
+
+    // Manual add
+    manualAdd.addEventListener('click', ()=>{
+      const lat = parseFloat(manualLat.value); const lon = parseFloat(manualLon.value);
+      if(Number.isFinite(lat) && Number.isFinite(lon)){
+        const label = labelInput.value.trim() || `Object ${saved.length+1}`;
+        saved.push({lat, lon, label, created:Date.now()}); saveAndUpdate(); manualLat.value=''; manualLon.value='';
+      } else alert('Please enter valid numeric latitude and longitude');
+    });
+
+    // Export/Import
+    exportBtn.addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(saved, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'ar_markers.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+    importBtn.addEventListener('click', ()=>importFile.click());
+    importFile.addEventListener('change', (ev)=>{
+      const f = ev.target.files && ev.target.files[0]; if(!f) return;
+      const r = new FileReader(); r.onload = ()=>{ try{ const arr = JSON.parse(r.result); if(Array.isArray(arr)){ saved = arr; saveAndUpdate(); alert('Imported'); } else alert('Invalid file format'); }catch(e){ alert('Invalid JSON'); } }; r.readAsText(f);
+    });
+
+    // Update overlay markers based on currentPos & heading
+    function updateMarkers(){ overlay.innerHTML = '';
+      if(!currentPos) return;
+      saved.forEach((m)=>{
+        const d = haversine(currentPos.lat, currentPos.lon, m.lat, m.lon);
+        const brg = bearingTo(currentPos.lat, currentPos.lon, m.lat, m.lon);
+        let angleDiff = 0;
+        if(typeof heading === 'number'){ angleDiff = brg - heading; if(angleDiff > 180) angleDiff -= 360; if(angleDiff < -180) angleDiff += 360; }
+        const maxAngle = 60; const clamped = Math.max(-maxAngle, Math.min(maxAngle, angleDiff));
+        const xFraction = clamped / maxAngle; const px = (window.innerWidth/2) + xFraction * (window.innerWidth/2 - 40);
+        const maxDistance = 200; const dClamped = Math.max(5, Math.min(maxDistance, d)); const yFraction = 1 - (dClamped / maxDistance);
+        const py = window.innerHeight * (0.25 + 0.6 * (1 - yFraction)); const scale = Math.max(0.5, 1 - (d/500));
+        const marker = document.createElement('div'); marker.className='marker'; marker.style.left = px + 'px'; marker.style.top = py + 'px'; marker.style.transform = `translate(-50%,-50%) scale(${scale})`;
+        marker.innerHTML = `<div class="bubble">${m.label}<br><small>${Math.round(d)}m ${Math.round(brg)}°</small></div><div class="dot"></div>`;
+        overlay.appendChild(marker);
+      });
+    }
+
+    // Start AR sequence (must be user gesture)
+    startAR.addEventListener('click', async ()=>{
+      startAR.disabled = true; status.textContent = 'Requesting permissions...';
+
+      // Camera
+      await startCamera();
+
+      // Location
+      startLocation();
+
+      // Motion
+      await startMotion();
+
+      // If at least one permission granted, hide the big overlay elements (we use smaller side panel)
+      setTimeout(()=>{
+        if(cameraEnabled || locationEnabled || motionEnabled){
+          document.getElementById('startOverlay')?.remove?.(); // safe-remove if present in old versions
+          status.textContent = 'AR ready. Add objects using + button.';
+          if(!cameraEnabled) noCam.classList.remove('hidden');
+        } else {
+          status.textContent = 'No permissions granted. You can still add manual markers or open site settings to re-enable permissions.'; startAR.disabled = false;
+        }
+      }, 200);
+    });
+
+    // toggle camera
+    toggleCam.addEventListener('click', ()=>{ if(cameraEnabled) stopCamera(); else startCamera(); });
+
+    // controls
+    addBtn.addEventListener('click', addMarkerAtCurrent);
+    clearBtn.addEventListener('click', ()=>{ if(confirm('Clear all saved objects?')){ saved = []; saveAndUpdate(); } });
+
+    // Init
+    function init(){ renderList(); updateMarkers(); // If there's saved markers but no location, show instructions
+      if(!navigator.mediaDevices || !navigator.geolocation){ status.textContent = 'Your browser may not support required APIs. Try Chrome/Edge on Android or Safari on iOS (with HTTPS).'; }
+    }
+    init(); window.addEventListener('resize', updateMarkers);
+
+    // Helpful global error handler for promise rejections
+    window.addEventListener('unhandledrejection', e=>{
+      console.error('Unhandled rejection', e.reason); if(e.reason && e.reason.name === 'NotAllowedError'){
+        status.textContent = 'Permission denied (NotAllowedError). Please allow Camera/Location in site settings and reload.';
+      }
+    });
+
+    // Small compatibility: ensure startOverlay exists for older versions - inject if missing
+    (function ensureStartOverlay(){
+      if(!document.getElementById('startOverlay')){
+        // create a minimal overlay to explain start gesture (not intrusive)
+        const div = document.createElement('div'); div.id = 'startOverlay'; div.style.position='absolute'; div.style.inset='0'; div.style.pointerEvents='none'; document.body.appendChild(div);
+      }
+    })();
+
+  </script>
 </body>
 </html>
